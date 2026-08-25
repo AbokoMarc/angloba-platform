@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Staff Login</title>
+<link rel="stylesheet" href="/assets/css/base.css" />
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#0F2544" />
+<link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="English Academy" />
+<script src="/config.js"></script>
+</head>
+<body>
+  <!--
+    Cette page n'est jamais liee depuis index.html/connexion.html — exactement
+    comme connexion-directeur.html dans le projet Clo-Clo. Elle reste accessible
+    par URL directe pour les profs et admins, qui n'ont pas de compte auto-cree.
+  -->
+  <div class="auth-screen">
+    <div class="auth-box">
+      <div class="auth-logo">
+        <span class="logo-glyph" id="logo-glyph"></span>
+        <span class="name" id="platform-name"></span>
+      </div>
+      <h1 class="auth-title">Staff sign in</h1>
+      <p class="auth-sub">Professeurs et administrateurs uniquement.</p>
+
+      <div class="auth-error" id="error-box"></div>
+
+      <form id="login-form">
+        <div class="field">
+          <label for="email">Email address</label>
+          <input type="email" id="email" required placeholder="you@englishacademy.cm" />
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" required placeholder="••••••••" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="submit-btn">Sign in</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/assets/js/api.js"></script>
+  <script>
+    (async () => {
+      try {
+        const { appearance } = await api.get("/appearance");
+        document.documentElement.style.setProperty("--primary", appearance.theme_primary);
+        document.documentElement.style.setProperty("--accent", appearance.theme_accent);
+        document.getElementById("logo-glyph").textContent = appearance.logo_glyph;
+        document.getElementById("platform-name").textContent = appearance.platform_name;
+      } catch {}
+    })();
+
+    const HOME_BY_ROLE = { teacher: "/teacher/dashboard.html", admin: "/admin/dashboard.html", superadmin: "/admin/dashboard.html" };
+
+    if (Auth.isLoggedIn() && HOME_BY_ROLE[Auth.getUser()?.role]) {
+      window.location.href = HOME_BY_ROLE[Auth.getUser().role];
+    }
+
+    const form = document.getElementById("login-form");
+    const errorBox = document.getElementById("error-box");
+    const submitBtn = document.getElementById("submit-btn");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      errorBox.classList.remove("show");
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Signing in...";
+      try {
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value;
+        const { token, user } = await api.post("/auth/login", { email, password });
+
+        if (!HOME_BY_ROLE[user.role]) {
+          errorBox.textContent = "Ce compte est un compte élève. Utilisez la page de connexion élève.";
+          errorBox.classList.add("show");
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Sign in";
+          return;
+        }
+
+        Auth.setSession(token, user);
+        window.location.href = HOME_BY_ROLE[user.role];
+      } catch (err) {
+        errorBox.textContent = err.message || "Une erreur est survenue.";
+        errorBox.classList.add("show");
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Sign in";
+      }
+    });
+  </script>
+  <script src="/assets/js/pwa-register.js"></script>
+</body>
+</html>
