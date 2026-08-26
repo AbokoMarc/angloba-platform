@@ -18,7 +18,7 @@ let allTeachers = [];
       <div class="card" style="padding:0;overflow:hidden;">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Student</th><th>Teacher</th><th>Course</th><th>Progress</th><th>Status</th></tr></thead>
+            <thead><tr><th>Student</th><th>Teacher</th><th>Course</th><th>Progress</th><th>Week</th><th>Status</th></tr></thead>
             <tbody id="students-tbody"></tbody>
           </table>
         </div>
@@ -57,9 +57,21 @@ function draw(filter = "") {
         </div>
       </td>
       <td>
+        <div class="row" style="gap:4px;">
+          M<input type="number" class="week-input" data-id="${s.id}" data-field="currentMonth" value="${s.current_month}" min="1" max="9" style="width:42px;padding:4px 4px;font-size:12px;" />
+          W<input type="number" class="week-input" data-id="${s.id}" data-field="currentWeek" value="${s.current_week}" min="1" max="36" style="width:48px;padding:4px 4px;font-size:12px;" />
+        </div>
+      </td>
+      <td>
         <button class="status-toggle badge ${s.status === "active" ? "badge-success" : "badge-muted"}" data-id="${s.id}" data-status="${s.status}">${s.status}</button>
       </td>
-    </tr>`).join("") : `<tr><td colspan="5" class="empty-state">Aucun élève.</td></tr>`;
+    </tr>`).join("") : `<tr><td colspan="6" class="empty-state">Aucun élève.</td></tr>`;
+
+  tbody.querySelectorAll(".week-input").forEach((input) => {
+    input.addEventListener("change", async () => {
+      await api.patch(`/students/${input.dataset.id}`, { [input.dataset.field]: Number(input.value) });
+    });
+  });
 
   tbody.querySelectorAll(".teacher-select").forEach((sel) => {
     sel.addEventListener("change", async () => {

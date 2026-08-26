@@ -90,3 +90,35 @@ export async function myDashboard(req, res) {
   });
   sendJson(res, 200, { profile: result.rows[0] || null });
 }
+
+// POST /api/students/me/advance-week — l'eleve marque sa semaine actuelle
+// comme terminee et passe a la suivante. Auto-limite : ne peut jamais
+// depasser la semaine 36, et le mois se recalcule automatiquement a partir
+// du numero de semaine (chaque mois contient 4 semaines).
+export async function advanceMyWeek(req, res) {
+  const user = requireRole(req, res, "student");
+  if (!user) return;
+
+  const profile = (await db.execute({
+    sql: "SELECT current_week FROM student_profiles WHERE user_id = ?",
+    args: [user.id],
+  })).rows[0];
+  if (!profile) return sendJson(res, 404, { error: "Profil eleve introuvable." });
+
+  const nextWeekNumber = Math.min(profile.current_week + 1, 36);
+
+  const weekRow = (await db.execute({
+    sql: "SELECT month_id FROM weeks WHERE number = ?",
+    args: [nextWeekNumber],
+  })).rows[0];
+  const monthRow = weekRow
+    ? (await db.execute({ sql: "SELECT number FROM months WHERE id = ?", args: [weekRow.month_id] })).rows[0]
+    : null;
+
+  await db.execute({
+    sql: "UPDATE student_profiles SET current_week = ?, current_month = ? WHERE user_id = ?",
+    args: [nextWeekNumber, monthRow ? monthRow.number : profile.current_month, user.id],
+  });
+
+  sendJson(res, 200, { currentWeek: nextWeekNumber, currentMonth: monthRow ? monthRow.number : null });
+}

@@ -81,7 +81,7 @@ function callClaude({ system, messages, maxTokens = 700 }) {
 
 // Gemini utilise "model" au lieu de "assistant" pour le role, et un objet
 // systemInstruction separe plutot qu'un champ "system" au meme niveau.
-const GEMINI_MODEL = () => process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_MODEL = () => process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
 function callGemini({ system, messages, maxTokens = 700 }) {
   return new Promise((resolve, reject) => {
@@ -165,8 +165,40 @@ If the student's message is unclear or contains errors, respond naturally the wa
     { role: "user", content: studentMessage },
   ];
 
-  const reply = await callLLM({ system, messages, maxTokens: 200 });
+  const reply = await callLLM({ system, messages, maxTokens: 300 });
   return reply.trim();
+}
+
+// Extrait un JSON valide d'une reponse de modele, meme si elle est entouree
+// de balises markdown (```json ... ```) ou de texte parasite avant/apres —
+// Gemini en particulier a tendance a ajouter ce genre d'habillage malgre
+// la consigne "Respond ONLY with JSON". Essaie plusieurs strategies dans
+// l'ordre avant d'abandonner.
+function extractJson(raw) {
+  if (!raw || !raw.trim()) {
+    throw new Error("Reponse IA vide (le modele n'a rien renvoye — reponse bloquee ou coupee).");
+  }
+
+  let cleaned = raw.trim();
+  // Retire les balises de code markdown eventuelles.
+  cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+
+  // Tentative directe.
+  try {
+    return JSON.parse(cleaned);
+  } catch { /* on tente la strategie suivante */ }
+
+  // Repli : extrait la plus grande sous-chaine entre la premiere "{" et la derniere "}".
+  const first = cleaned.indexOf("{");
+  const last = cleaned.lastIndexOf("}");
+  if (first !== -1 && last !== -1 && last > first) {
+    try {
+      return JSON.parse(cleaned.slice(first, last + 1));
+    } catch { /* echec final ci-dessous */ }
+  }
+
+  const preview = cleaned.slice(0, 200);
+  throw new Error(`Reponse IA non structuree. Debut de la reponse recue : "${preview}"`);
 }
 
 /**
@@ -182,17 +214,15 @@ export async function speakingScore({ scenario, level, transcript }) {
   const system = `You are an English teacher assessing a learner's SPOKEN English from a role-play transcript (the student's turns only should be scored; the AI/other-character turns are context).
 Learner level: ${level}.
 Score generously but honestly for a learner at this level — do not expect native fluency.
-Respond ONLY with strict JSON, no markdown, no preamble, in this exact shape:
+Respond ONLY with strict JSON — no markdown code fences, no preamble, no explanation outside the JSON — in this exact shape:
 {"pronunciation": <0-100>, "fluency": <0-100>, "grammar": <0-100>, "vocabulary": <0-100>, "overall": <0-100>, "feedback": "<2-3 short encouraging sentences in English, mentioning one specific strength and one specific thing to improve>"}`;
 
   const messages = [
     { role: "user", content: `Transcript:\n${conversationText}\n\nScore the student's performance now.` },
   ];
 
-  const raw = await callLLM({ system, messages, maxTokens: 400 });
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Reponse IA non structuree (scoring).");
-  return JSON.parse(jsonMatch[0]);
+  const raw = await callLLM({ system, messages, maxTokens: 700 });
+  return extractJson(raw);
 }
 
 /**
@@ -204,13 +234,11 @@ Respond ONLY with strict JSON, no markdown, no preamble, in this exact shape:
 export async function correctionAssist({ prompt, minWords, studentText }) {
   const system = `You are helping an English teacher pre-correct a student's written composition.
 The assignment was: "${prompt}" (minimum ${minWords} words).
-Identify grammar/vocabulary/spelling issues. Respond ONLY with strict JSON:
+Identify grammar/vocabulary/spelling issues. Respond ONLY with strict JSON — no markdown code fences, no preamble:
 {"suggestedScore": <0-100>, "strengths": "<1-2 sentences>", "improvements": "<1-2 sentences>", "annotatedIssues": [{"original": "...", "suggestion": "...", "type": "grammar|vocabulary|spelling"}]}
 Keep annotatedIssues to at most 6 of the most important issues. This is a DRAFT for the teacher — do not address the student directly.`;
 
   const messages = [{ role: "user", content: studentText }];
-  const raw = await callLLM({ system, messages, maxTokens: 600 });
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Reponse IA non structuree (correction).");
-  return JSON.parse(jsonMatch[0]);
+  const raw = await callLLM({ system, messages, maxTokens: 800 });
+  return extractJson(raw);
 }

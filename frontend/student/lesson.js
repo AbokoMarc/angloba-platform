@@ -79,7 +79,7 @@ function renderLesson() {
       </div>
     `;
   } else if (currentTab === "exercises") {
-    tabContent.innerHTML = exercises.length ? exercises.map((ex, i) => `
+    tabContent.innerHTML = (exercises.length ? exercises.map((ex, i) => `
       <div class="card" style="margin-bottom:10px;">
         <p style="font-size:13px;font-weight:600;margin-bottom:10px;">${i + 1}. ${ex.question}</p>
         <div class="stack" style="gap:6px;">
@@ -89,7 +89,7 @@ function renderLesson() {
             </button>`).join("")}
         </div>
       </div>
-    `).join("") : `<div class="empty-state">Pas encore d'exercices pour cette semaine.</div>`;
+    `).join("") : `<div class="empty-state">Pas encore d'exercices pour cette semaine.</div>`) + renderCompleteWeekBlock(week);
 
     document.querySelectorAll(".exo-option").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -105,5 +105,34 @@ function renderLesson() {
         }
       });
     });
+
+    const completeBtn = document.getElementById("complete-week-btn");
+    if (completeBtn) {
+      completeBtn.addEventListener("click", async () => {
+        completeBtn.disabled = true;
+        completeBtn.textContent = "Saving...";
+        try {
+          const { currentWeek } = await api.post("/students/me/advance-week", {});
+          completeBtn.textContent = `✅ Week complete! Moving to Week ${currentWeek}...`;
+          setTimeout(() => { window.location.href = "/student/dashboard.html"; }, 1200);
+        } catch (err) {
+          completeBtn.textContent = "Retry";
+          completeBtn.disabled = false;
+          alert(err.message);
+        }
+      });
+    }
   }
+}
+
+function renderCompleteWeekBlock(week) {
+  if (week.number >= 36) {
+    return `<div class="card" style="text-align:center;background:var(--success-bg);color:var(--success);">🎉 Tu es sur la dernière semaine du programme !</div>`;
+  }
+  return `
+    <div class="card" style="text-align:center;">
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">Terminé la grammaire, le vocabulaire et les exercices de cette semaine ?</p>
+      <button class="btn btn-primary" id="complete-week-btn">Mark Week ${week.number} complete → Continue to Week ${week.number + 1}</button>
+    </div>
+  `;
 }

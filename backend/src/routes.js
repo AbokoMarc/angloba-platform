@@ -26,6 +26,7 @@ export const routes = [
   ["GET", /^\/api\/students$/, studentsCtrl.listStudents],
   ["PATCH", /^\/api\/students\/(?<id>[^/]+)$/, studentsCtrl.updateStudent],
   ["GET", /^\/api\/students\/me\/dashboard$/, studentsCtrl.myDashboard],
+  ["POST", /^\/api\/students\/me\/advance-week$/, studentsCtrl.advanceMyWeek],
 
   // --- Teachers ---
   ["GET", /^\/api\/teachers$/, teachersCtrl.listTeachers],
