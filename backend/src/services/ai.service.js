@@ -18,7 +18,8 @@
 import https from "node:https";
 
 function provider() {
-  return (process.env.AI_PROVIDER || "anthropic").toLowerCase();
+  // Gemini par defaut (palier gratuit) si AI_PROVIDER n'est pas precise.
+  return (process.env.AI_PROVIDER || "gemini").toLowerCase();
 }
 
 function callLLM(opts) {

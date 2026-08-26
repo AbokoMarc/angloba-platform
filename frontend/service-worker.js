@@ -6,19 +6,23 @@
 // avec un handler "fetch"). Les appels a l'API restent toujours en reseau
 // direct (jamais mis en cache) puisque les donnees changent en permanence.
 
-const CACHE_NAME = "angloba-shell-v1";
+const CACHE_NAME = "angloba-shell-v2";
 const APP_SHELL = [
   "/index.html",
   "/connexion.html",
   "/inscription.html",
+  "/connexion-staff.html",
   "/assets/css/base.css",
   "/assets/js/api.js",
   "/assets/js/shell.js",
   "/assets/js/icons.js",
   "/config.js",
   "/manifest.json",
+  "/manifest-staff.json",
   "/assets/icons/icon-192.png",
   "/assets/icons/icon-512.png",
+  "/assets/icons/icon-staff-192.png",
+  "/assets/icons/icon-staff-512.png",
 ];
 
 self.addEventListener("install", (event) => {

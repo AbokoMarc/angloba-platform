@@ -109,14 +109,60 @@ function renderSidebar({ spaceLabel, navItems, activeKey, user, switchLink }) {
   `;
 }
 
-function renderBottomNav({ navItems, activeKey }) {
+function renderBottomNav({ navItems, activeKey, user }) {
   const el = document.getElementById("shell-bottomnav");
   if (!el) return;
-  const items = navItems.slice(0, 5); // garde la bottom-nav lisible sur mobile
-  el.innerHTML = items.map((item) => `
+
+  const MAX_VISIBLE = 4; // + le bouton "More" en 5e position
+  const visible = navItems.length > MAX_VISIBLE ? navItems.slice(0, MAX_VISIBLE) : navItems;
+  const overflow = navItems.length > MAX_VISIBLE ? navItems.slice(MAX_VISIBLE) : [];
+
+  el.innerHTML = visible.map((item) => `
     <a href="${item.href}" class="${item.key === activeKey ? "active" : ""}">
       ${svgIcon(item.icon)}<span>${item.label}</span>
-    </a>`).join("");
+    </a>`).join("") + (
+      overflow.length
+        ? `<button id="bottomnav-more-btn" class="${overflow.some((i) => i.key === activeKey) ? "active" : ""}">${svgIcon("grid")}<span>More</span></button>`
+        : `<button id="bottomnav-more-btn">${svgIcon("logout")}<span>Sign out</span></button>`
+    );
+
+  const moreBtn = document.getElementById("bottomnav-more-btn");
+  if (moreBtn) {
+    moreBtn.addEventListener("click", () => openMoreSheet({ overflow, user }));
+  }
+}
+
+function openMoreSheet({ overflow, user }) {
+  // Supprime une feuille deja ouverte, le cas echeant.
+  document.getElementById("more-sheet-overlay")?.remove();
+
+  const overlay = document.createElement("div");
+  overlay.id = "more-sheet-overlay";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:60;display:flex;align-items:flex-end;";
+  overlay.innerHTML = `
+    <div style="background:#fff;width:100%;border-radius:18px 18px 0 0;padding:10px 16px 24px;max-height:70vh;overflow-y:auto;">
+      <div style="width:36px;height:4px;background:#ddd;border-radius:99px;margin:6px auto 14px;"></div>
+      ${overflow.map((item) => `
+        <a href="${item.href}" style="display:flex;align-items:center;gap:12px;padding:12px 6px;color:var(--text);font-size:14.5px;">
+          ${svgIcon(item.icon)}<span>${item.label}</span>
+        </a>`).join("")}
+      ${overflow.length ? '<div style="height:1px;background:var(--border);margin:6px 0;"></div>' : ""}
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 6px;">
+        <div class="avatar" style="width:32px;height:32px;border-radius:999px;background:var(--accent);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;">${initials(user.name)}</div>
+        <span style="font-size:13.5px;font-weight:500;">${user.name}</span>
+      </div>
+      <button id="more-sheet-logout" style="display:flex;align-items:center;gap:12px;padding:12px 6px;color:var(--danger);font-size:14.5px;width:100%;text-align:left;">
+        ${svgIcon("logout")}<span>Sign out</span>
+      </button>
+    </div>
+  `;
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+
+  document.getElementById("more-sheet-logout").addEventListener("click", () => {
+    Auth.clear();
+    window.location.href = "/index.html";
+  });
 }
 
 function renderTopbar({ title, subtitle, roleLabel, roleIcon }) {
@@ -154,7 +200,15 @@ async function renderShell({ roles, activeKey, title, subtitle }) {
   try {
     [{ user: me }, { appearance }] = await Promise.all([api.get("/auth/me"), api.get("/appearance")]);
   } catch (err) {
-    redirectToLogin(roles);
+    if (err.status === 401) {
+      // Session vraiment invalide/expirée -> retour login legitime.
+      redirectToLogin(roles);
+    } else {
+      // Erreur réseau (serveur injoignable, CORS, DNS...) : on affiche un
+      // message au lieu de rediriger, pour ne JAMAIS créer de boucle
+      // infinie entre la page de connexion et cette page.
+      renderNetworkError(err);
+    }
     return null;
   }
 
@@ -200,7 +254,7 @@ async function renderShell({ roles, activeKey, title, subtitle }) {
   }
 
   renderSidebar({ spaceLabel, navItems, activeKey, user: me, switchLink });
-  renderBottomNav({ navItems, activeKey });
+  renderBottomNav({ navItems, activeKey, user: me });
   renderTopbar({ title, subtitle, roleLabel, roleIcon });
   bindLogout();
 
@@ -210,4 +264,23 @@ async function renderShell({ roles, activeKey, title, subtitle }) {
 function redirectToLogin(roles) {
   const goesToStaff = roles.some((r) => ["teacher", "admin", "superadmin"].includes(r));
   window.location.href = goesToStaff ? "/connexion-staff.html" : "/connexion.html";
+}
+
+function renderNetworkError(err) {
+  document.body.innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:-apple-system,sans-serif;background:#F4F2ED;">
+      <div style="max-width:360px;">
+        <p style="font-size:38px;margin-bottom:10px;">⚠️</p>
+        <p style="font-weight:600;font-size:16px;margin-bottom:8px;color:#1F2430;">Impossible de contacter le serveur</p>
+        <p style="color:#6B7280;font-size:13px;margin-bottom:6px;">${escapeHtmlSafe(err.message || "Erreur réseau inconnue.")}</p>
+        <p style="color:#6B7280;font-size:12px;margin-bottom:18px;">Vérifie ta connexion internet, ou réessaie dans une minute (le serveur peut mettre du temps à se réveiller).</p>
+        <button onclick="location.reload()" style="padding:10px 22px;border-radius:10px;background:#0F2544;color:#fff;border:none;font-weight:600;font-size:14px;">Réessayer</button>
+      </div>
+    </div>`;
+}
+
+function escapeHtmlSafe(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
 }
