@@ -40,6 +40,10 @@
           <div class="sub-detail" data-i="${i}" style="display:none;margin-top:10px;">
             <div class="card" style="background:var(--row);font-size:12.5px;">${escapeHtml(s.body)}</div>
             ${s.teacher_feedback ? `<div class="card" style="background:color-mix(in srgb, var(--accent) 12%, white);font-size:12.5px;margin-top:8px;"><b>🎓 Teacher feedback:</b> ${escapeHtml(s.teacher_feedback)}</div>` : ""}
+            ${s.status === "submitted" ? `
+              <button class="btn btn-outline btn-sm" data-ai-review="${s.id}" style="margin-top:8px;">✨ Demander une correction IA immédiate</button>
+              <div id="ai-review-result-${s.id}"></div>
+            ` : ""}
           </div>
         </div>
       `).join("");
@@ -50,8 +54,33 @@
           detail.style.display = detail.style.display === "none" ? "block" : "none";
         });
       });
+
+      list.querySelectorAll("[data-ai-review]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const subId = btn.dataset.aiReview;
+          btn.disabled = true;
+          btn.innerHTML = `<span class="spinner"></span> Analyse en cours...`;
+          const resultBox = document.getElementById(`ai-review-result-${subId}`);
+          try {
+            const { passed, threshold, assist } = await api.post(`/compositions/submissions/${subId}/ai-review`, {});
+            resultBox.innerHTML = `
+              <div class="card" style="margin-top:8px;background:${passed ? "var(--success-bg)" : "color-mix(in srgb, var(--accent) 12%, white)"};font-size:12.5px;">
+                <p style="font-weight:600;margin-bottom:4px;">${passed ? `✅ Validée par l'IA (score ${assist.suggestedScore}/100 — minimum ${threshold})` : `Pas encore assez (score IA indicatif : ${assist.suggestedScore}/100, minimum ${threshold}) — en attente du professeur ou d'une nouvelle tentative.`}</p>
+                <p><b>Points forts :</b> ${escapeHtml(assist.strengths)}</p>
+                <p style="margin-top:4px;"><b>À améliorer :</b> ${escapeHtml(assist.improvements)}</p>
+              </div>
+            `;
+            if (passed) btn.remove(); else { btn.disabled = false; btn.textContent = "✨ Redemander une correction IA"; }
+          } catch (err) {
+            resultBox.innerHTML = `<p style="color:var(--danger);font-size:12px;margin-top:8px;">${err.message}</p>`;
+            btn.disabled = false;
+            btn.textContent = "✨ Demander une correction IA immédiate";
+          }
+        });
+      });
     }
   } catch (err) {
+    if (handlePaywallError(err)) return;
     root.innerHTML = `<div class="empty-state">${err.message}</div>`;
   }
 })();

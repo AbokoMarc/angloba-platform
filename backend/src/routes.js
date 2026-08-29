@@ -9,6 +9,7 @@ import * as compositionsCtrl from "./controllers/compositions.controller.js";
 import * as speakingCtrl from "./controllers/speaking.controller.js";
 import * as mediaCtrl from "./controllers/media.controller.js";
 import * as appearanceCtrl from "./controllers/appearance.controller.js";
+import * as paymentsCtrl from "./controllers/payments.controller.js";
 
 // Chaque route : [METHOD, regex-avec-groupes-nommes, handler]
 // params est extrait automatiquement des groupes nommes (?<id>...) etc.
@@ -47,6 +48,7 @@ export const routes = [
   ["POST", /^\/api\/courses\/weeks\/(?<number>\d+)\/exercises$/, coursesCtrl.addExercise],
   ["GET", /^\/api\/courses\/speaking-scenarios$/, coursesCtrl.listSpeakingScenarios],
   ["POST", /^\/api\/courses\/speaking-scenarios$/, coursesCtrl.createSpeakingScenario],
+  ["POST", /^\/api\/courses\/weeks\/(?<number>\d+)\/submit-exercises$/, coursesCtrl.submitExercises],
 
   // --- Compositions ---
   ["GET", /^\/api\/compositions$/, compositionsCtrl.listCompositions],
@@ -54,6 +56,7 @@ export const routes = [
   ["POST", /^\/api\/compositions\/(?<id>[^/]+)\/submit$/, compositionsCtrl.submitComposition],
   ["GET", /^\/api\/compositions\/pending$/, compositionsCtrl.pendingCorrections],
   ["POST", /^\/api\/compositions\/submissions\/(?<id>[^/]+)\/ai-assist$/, compositionsCtrl.aiAssistCorrection],
+  ["POST", /^\/api\/compositions\/submissions\/(?<id>[^/]+)\/ai-review$/, compositionsCtrl.studentAiReview],
   ["PATCH", /^\/api\/compositions\/submissions\/(?<id>[^/]+)\/correct$/, compositionsCtrl.correctSubmission],
 
   // --- Speaking Lab (IA) ---
@@ -65,4 +68,10 @@ export const routes = [
   // --- Media / audio upload ---
   ["POST", /^\/api\/media\/upload$/, mediaCtrl.uploadAudio],
   ["GET", /^\/api\/media$/, mediaCtrl.listAudio],
+
+  // --- Paiements (CinetPay : Orange Money, MTN MoMo, Visa/Mastercard) ---
+  ["GET", /^\/api\/payments\/me$/, paymentsCtrl.myPayments],
+  ["POST", /^\/api\/payments\/initiate$/, paymentsCtrl.initiate],
+  ["GET", /^\/api\/payments\/status\/(?<transactionId>[^/]+)$/, paymentsCtrl.status],
+  ["POST", /^\/api\/payments\/notify$/, paymentsCtrl.notify],
 ];

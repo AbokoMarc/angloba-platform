@@ -2,9 +2,12 @@
 
 import { db } from "../db/client.js";
 import { requireRole } from "../middleware/auth.js";
+import { requireActiveAccess } from "../middleware/subscription.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
 import { newId } from "../utils/ids.js";
 import { correctionAssist } from "../services/ai.service.js";
+
+const AI_AUTO_PASS_THRESHOLD = Number(process.env.AI_AUTO_PASS_THRESHOLD || 65);
 
 // GET /api/compositions — liste des sujets de composition (tous roles connectes)
 export async function listCompositions(req, res) {
@@ -31,6 +34,8 @@ export async function mySubmissions(req, res) {
 export async function submitComposition(req, res, params) {
   const user = requireRole(req, res, "student");
   if (!user) return;
+  const ok = await requireActiveAccess(req, res, user);
+  if (!ok) return;
   const body = await readJsonBody(req);
   const wordCount = (body.text || "").trim().split(/\s+/).filter(Boolean).length;
   const status = body.submit ? "submitted" : "draft";
@@ -109,4 +114,42 @@ export async function correctSubmission(req, res, params) {
     args: [body.score, body.feedback, user.id, params.id],
   });
   sendJson(res, 200, { ok: true });
+}
+
+// POST /api/compositions/submissions/:id/ai-review — L'ELEVE demande une
+// correction immediate par l'IA (au lieu d'attendre le prof). Si l'IA juge
+// la copie suffisamment bonne (>= AI_AUTO_PASS_THRESHOLD), elle est
+// automatiquement validee "corrected" — ce qui debloque la progression.
+// Sinon, la copie reste 'submitted' en attente d'un vrai prof, mais
+// l'eleve voit deja le retour de l'IA pour s'ameliorer avant de reessayer.
+export async function studentAiReview(req, res, params) {
+  const user = requireRole(req, res, "student");
+  if (!user) return;
+
+  const sub = (await db.execute({
+    sql: `SELECT s.id, s.body, s.student_id, s.status, c.prompt, c.min_words
+          FROM composition_submissions s JOIN compositions c ON c.id = s.composition_id
+          WHERE s.id = ?`,
+    args: [params.id],
+  })).rows[0];
+
+  if (!sub || sub.student_id !== user.id) return sendJson(res, 404, { error: "Copie introuvable." });
+  if (sub.status !== "submitted") return sendJson(res, 400, { error: "Cette copie n'est pas en attente de correction." });
+
+  try {
+    const assist = await correctionAssist({ prompt: sub.prompt, minWords: sub.min_words, studentText: sub.body });
+    const passed = assist.suggestedScore >= AI_AUTO_PASS_THRESHOLD;
+
+    if (passed) {
+      await db.execute({
+        sql: `UPDATE composition_submissions SET status='corrected', score=?, teacher_feedback=?, corrected_at=datetime('now'), corrected_by=NULL
+              WHERE id=?`,
+        args: [assist.suggestedScore, `[Corrige automatiquement par l'IA] ${assist.strengths} ${assist.improvements}`, sub.id],
+      });
+    }
+
+    sendJson(res, 200, { passed, threshold: AI_AUTO_PASS_THRESHOLD, assist });
+  } catch (err) {
+    sendJson(res, 503, { error: err.message });
+  }
 }

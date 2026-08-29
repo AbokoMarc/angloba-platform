@@ -7,8 +7,11 @@
 
 import { db } from "../db/client.js";
 import { requireRole, requirePermission } from "../middleware/auth.js";
+import { requireActiveAccess } from "../middleware/subscription.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
 import { newId } from "../utils/ids.js";
+
+const EXERCISE_PASS_THRESHOLD = Number(process.env.EXERCISE_PASS_THRESHOLD || 60);
 
 // GET /api/courses/months — programme complet (arbre mois > semaines), lecture publique-connectee
 export async function getFullProgram(req, res) {
@@ -26,9 +29,12 @@ export async function getFullProgram(req, res) {
 }
 
 // GET /api/courses/weeks/:number — detail complet d'une semaine (grammaire, vocab, exercices)
+// Reserve aux eleves avec un essai/abonnement encore valide.
 export async function getWeekDetail(req, res, params) {
   const user = requireRole(req, res, "student", "teacher", "admin", "superadmin");
   if (!user) return;
+  const ok = await requireActiveAccess(req, res, user);
+  if (!ok) return;
 
   const weekNum = Number(params.number);
   const week = (await db.execute({ sql: "SELECT * FROM weeks WHERE number = ?", args: [weekNum] })).rows[0];
@@ -134,4 +140,37 @@ export async function createSpeakingScenario(req, res) {
     args: [body.key, body.title, body.emoji || "🗣️", body.level || "Beginner", body.aiPersona, body.aiOpening, body.goal, body.audioUrl || null],
   });
   sendJson(res, 201, { ok: true });
+}
+
+// POST /api/courses/weeks/:number/submit-exercises — l'eleve soumet ses
+// reponses ; le score est calcule et enregistre (dernier essai fait foi).
+// C'est CE score qui conditionne le deblocage de la semaine suivante.
+export async function submitExercises(req, res, params) {
+  const user = requireRole(req, res, "student");
+  if (!user) return;
+  const ok = await requireActiveAccess(req, res, user);
+  if (!ok) return;
+
+  const weekNum = Number(params.number);
+  const week = (await db.execute({ sql: "SELECT id FROM weeks WHERE number = ?", args: [weekNum] })).rows[0];
+  if (!week) return sendJson(res, 404, { error: "Semaine introuvable." });
+
+  const exercises = (await db.execute({ sql: "SELECT id, correct_index FROM exercises WHERE week_id = ? ORDER BY id", args: [week.id] })).rows;
+  if (!exercises.length) return sendJson(res, 400, { error: "Aucun exercice pour cette semaine." });
+
+  const body = await readJsonBody(req);
+  const answers = body.answers || [];
+
+  const results = exercises.map((ex, i) => answers[i] === ex.correct_index);
+  const correctCount = results.filter(Boolean).length;
+  const scorePct = Math.round((correctCount / exercises.length) * 100);
+
+  await db.execute({
+    sql: `INSERT INTO exercise_scores (id, student_id, week_number, score_pct, updated_at)
+          VALUES (?, ?, ?, ?, datetime('now'))
+          ON CONFLICT(student_id, week_number) DO UPDATE SET score_pct = excluded.score_pct, updated_at = datetime('now')`,
+    args: [newId("xsc"), user.id, weekNum, scorePct],
+  });
+
+  sendJson(res, 200, { scorePct, results, passThreshold: EXERCISE_PASS_THRESHOLD, passed: scorePct >= EXERCISE_PASS_THRESHOLD });
 }

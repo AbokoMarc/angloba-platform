@@ -16,6 +16,7 @@
       (document.getElementById("shell-topbar").querySelector("div").innerHTML += `<p class="sub">Month ${monthNum} · Week ${weekNum} · ${weekTitle}</p>`);
 
     root.innerHTML = `
+      ${renderSubscriptionBanner(profile)}
       <div class="card" style="background:var(--primary);color:#fff;">
         <p style="color:rgba(255,255,255,.6);font-size:13px;">Good to see you, ${ctx.user.name.split(" ")[0]} 👋</p>
         <h2 style="font-size:22px;color:#fff;margin-top:4px;">Your English Journey</h2>
@@ -57,3 +58,36 @@
     root.innerHTML = `<div class="empty-state">Impossible de charger ton tableau de bord. ${err.message}</div>`;
   }
 })();
+
+function renderSubscriptionBanner(profile) {
+  if (!profile) return "";
+  const status = profile.subscription_status;
+
+  if (status === "active") {
+    return `
+      <a href="/student/subscribe.html" class="card row-between" style="background:var(--success-bg);color:var(--success);">
+        <span style="font-size:12.5px;">✅ Abonnement actif jusqu'au ${formatDate(profile.subscription_expires_at)}</span>
+        ${icon("arrowRight")}
+      </a>`;
+  }
+
+  if (status === "trial") {
+    const daysLeft = profile.trial_ends_at ? Math.max(0, Math.ceil((new Date(profile.trial_ends_at + "Z") - new Date()) / 86400000)) : 0;
+    return `
+      <a href="/student/subscribe.html" class="card row-between" style="background:color-mix(in srgb, var(--accent) 15%, white);color:var(--primary);">
+        <span style="font-size:12.5px;">🎁 Essai gratuit — ${daysLeft} jour(s) restant(s)</span>
+        <span style="font-size:12px;font-weight:600;color:var(--accent);">S'abonner ${icon("arrowRight")}</span>
+      </a>`;
+  }
+
+  return `
+    <a href="/student/subscribe.html" class="card row-between" style="background:var(--danger-bg);color:var(--danger);">
+      <span style="font-size:12.5px;">🔒 Ton accès a expiré — abonne-toi pour continuer</span>
+      ${icon("arrowRight")}
+    </a>`;
+}
+
+function formatDate(str) {
+  if (!str) return "—";
+  return new Date(str + "Z").toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
+}

@@ -9,9 +9,13 @@ import { db } from "../db/client.js";
 import { requireRole, requirePermission } from "../middleware/auth.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
 
+const EXERCISE_PASS_THRESHOLD = Number(process.env.EXERCISE_PASS_THRESHOLD || 60);
+const COMPOSITION_PASS_THRESHOLD = Number(process.env.COMPOSITION_PASS_THRESHOLD || 50);
+
 const STUDENT_SELECT = `
   SELECT u.id, u.name, u.email, u.status,
          sp.teacher_id, sp.course_name, sp.current_month, sp.current_week, sp.overall_pct,
+         sp.subscription_status, sp.trial_ends_at, sp.subscription_expires_at,
          t.name as teacher_name
   FROM users u
   JOIN student_profiles sp ON sp.user_id = u.id
@@ -92,9 +96,18 @@ export async function myDashboard(req, res) {
 }
 
 // POST /api/students/me/advance-week — l'eleve marque sa semaine actuelle
-// comme terminee et passe a la suivante. Auto-limite : ne peut jamais
-// depasser la semaine 36, et le mois se recalcule automatiquement a partir
-// du numero de semaine (chaque mois contient 4 semaines).
+// comme terminee et passe a la suivante.
+//
+// CONDITIONS DE DEBLOCAGE (demande explicite : validation par prof OU IA) :
+//  1) Si la semaine a des exercices, il faut un score >= EXERCISE_PASS_THRESHOLD
+//     (voir /courses/weeks/:number/submit-exercises)
+//  2) Si une composition est prevue a cette semaine, elle doit etre
+//     'corrected' avec un score >= COMPOSITION_PASS_THRESHOLD — correction
+//     venant soit du professeur, soit de l'IA quand elle juge la copie
+//     suffisamment bonne (voir /compositions/submissions/:id/ai-review)
+//
+// Auto-limite : ne peut jamais depasser la semaine 36, et le mois se
+// recalcule automatiquement a partir du numero de semaine.
 export async function advanceMyWeek(req, res) {
   const user = requireRole(req, res, "student");
   if (!user) return;
@@ -105,14 +118,52 @@ export async function advanceMyWeek(req, res) {
   })).rows[0];
   if (!profile) return sendJson(res, 404, { error: "Profil eleve introuvable." });
 
-  const nextWeekNumber = Math.min(profile.current_week + 1, 36);
+  const currentWeek = profile.current_week;
+  const missing = [];
 
-  const weekRow = (await db.execute({
+  // Condition 1 : exercices
+  const weekRow = (await db.execute({ sql: "SELECT id FROM weeks WHERE number = ?", args: [currentWeek] })).rows[0];
+  const exerciseCount = weekRow
+    ? (await db.execute({ sql: "SELECT COUNT(*) as n FROM exercises WHERE week_id = ?", args: [weekRow.id] })).rows[0].n
+    : 0;
+
+  if (exerciseCount > 0) {
+    const scoreRow = (await db.execute({
+      sql: "SELECT score_pct FROM exercise_scores WHERE student_id = ? AND week_number = ?",
+      args: [user.id, currentWeek],
+    })).rows[0];
+    if (!scoreRow || scoreRow.score_pct < EXERCISE_PASS_THRESHOLD) {
+      missing.push(`Termine les exercices de la semaine (score minimum ${EXERCISE_PASS_THRESHOLD}%, ton meilleur score actuel : ${scoreRow ? scoreRow.score_pct : 0}%).`);
+    }
+  }
+
+  // Condition 2 : composition due a cette semaine
+  const composition = weekRow
+    ? (await db.execute({ sql: "SELECT id, title FROM compositions WHERE week_id = ?", args: [weekRow.id] })).rows[0]
+    : null;
+  if (composition) {
+    const submission = (await db.execute({
+      sql: "SELECT status, score FROM composition_submissions WHERE composition_id = ? AND student_id = ?",
+      args: [composition.id, user.id],
+    })).rows[0];
+    const ok = submission && submission.status === "corrected" && submission.score >= COMPOSITION_PASS_THRESHOLD;
+    if (!ok) {
+      missing.push(`Ta composition "${composition.title}" doit d'abord etre validee (score minimum ${COMPOSITION_PASS_THRESHOLD}/100) par ton professeur ou par l'IA.`);
+    }
+  }
+
+  if (missing.length) {
+    return sendJson(res, 403, { error: "Conditions non remplies pour avancer.", reasons: missing });
+  }
+
+  const nextWeekNumber = Math.min(currentWeek + 1, 36);
+
+  const nextWeekRow = (await db.execute({
     sql: "SELECT month_id FROM weeks WHERE number = ?",
     args: [nextWeekNumber],
   })).rows[0];
-  const monthRow = weekRow
-    ? (await db.execute({ sql: "SELECT number FROM months WHERE id = ?", args: [weekRow.month_id] })).rows[0]
+  const monthRow = nextWeekRow
+    ? (await db.execute({ sql: "SELECT number FROM months WHERE id = ?", args: [nextWeekRow.month_id] })).rows[0]
     : null;
 
   await db.execute({

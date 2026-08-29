@@ -10,6 +10,7 @@
 
 import { db } from "../db/client.js";
 import { requireRole } from "../middleware/auth.js";
+import { requireActiveAccess } from "../middleware/subscription.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
 import { newId } from "../utils/ids.js";
 import { speakingReply, speakingScore } from "../services/ai.service.js";
@@ -19,6 +20,8 @@ import { speakingReply, speakingScore } from "../services/ai.service.js";
 export async function speakingTurn(req, res) {
   const user = requireRole(req, res, "student");
   if (!user) return;
+  const ok = await requireActiveAccess(req, res, user);
+  if (!ok) return;
 
   const body = await readJsonBody(req);
   const scenario = (await db.execute({

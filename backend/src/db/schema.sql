@@ -43,7 +43,35 @@ CREATE TABLE IF NOT EXISTS student_profiles (
   current_month INTEGER NOT NULL DEFAULT 1,
   current_week  INTEGER NOT NULL DEFAULT 1,
   streak_days   INTEGER NOT NULL DEFAULT 0,
-  overall_pct   INTEGER NOT NULL DEFAULT 0
+  overall_pct   INTEGER NOT NULL DEFAULT 0,
+  subscription_status   TEXT NOT NULL DEFAULT 'trial' CHECK (subscription_status IN ('trial','active','expired')),
+  trial_ends_at          TEXT,
+  subscription_expires_at TEXT
+);
+
+-- Score obtenu par un eleve sur les exercices d'une semaine (dernier essai
+-- fait foi). Sert de condition pour debloquer la semaine suivante.
+CREATE TABLE IF NOT EXISTS exercise_scores (
+  id           TEXT PRIMARY KEY,
+  student_id   TEXT NOT NULL REFERENCES users(id),
+  week_number  INTEGER NOT NULL,
+  score_pct    INTEGER NOT NULL,
+  updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(student_id, week_number)
+);
+
+-- Paiements d'abonnement (CinetPay : Orange Money, MTN MoMo, Visa/Mastercard
+-- en une seule integration).
+CREATE TABLE IF NOT EXISTS payments (
+  id             TEXT PRIMARY KEY,
+  student_id     TEXT NOT NULL REFERENCES users(id),
+  transaction_id TEXT NOT NULL UNIQUE,
+  amount         INTEGER NOT NULL,
+  currency       TEXT NOT NULL DEFAULT 'XAF',
+  status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','success','failed')),
+  payment_method TEXT,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  confirmed_at   TEXT
 );
 
 -- Programme : 9 mois

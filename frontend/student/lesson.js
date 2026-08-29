@@ -19,6 +19,7 @@ let weekData = null;
 
     renderLesson();
   } catch (err) {
+    if (handlePaywallError(err)) return;
     root.innerHTML = `<div class="empty-state">${err.message}</div>`;
   }
 })();
@@ -79,49 +80,106 @@ function renderLesson() {
       </div>
     `;
   } else if (currentTab === "exercises") {
-    tabContent.innerHTML = (exercises.length ? exercises.map((ex, i) => `
+    if (!exercises.length) {
+      tabContent.innerHTML = `<div class="empty-state">Pas encore d'exercices pour cette semaine.</div>` + renderCompleteWeekBlock(week);
+      bindCompleteWeekButton(week);
+      return;
+    }
+
+    const selections = new Array(exercises.length).fill(null);
+
+    tabContent.innerHTML = exercises.map((ex, i) => `
       <div class="card" style="margin-bottom:10px;">
         <p style="font-size:13px;font-weight:600;margin-bottom:10px;">${i + 1}. ${ex.question}</p>
         <div class="stack" style="gap:6px;">
           ${ex.options.map((opt, oi) => `
-            <button class="exo-option btn btn-outline" data-exo="${i}" data-idx="${oi}" data-correct="${ex.correct_index}" style="justify-content:flex-start;text-align:left;">
+            <button class="exo-select btn btn-outline" data-exo="${i}" data-idx="${oi}" style="justify-content:flex-start;text-align:left;">
               <span style="color:var(--text-muted);margin-right:6px;">${String.fromCharCode(65 + oi)}.</span>${opt}
             </button>`).join("")}
         </div>
       </div>
-    `).join("") : `<div class="empty-state">Pas encore d'exercices pour cette semaine.</div>`) + renderCompleteWeekBlock(week);
+    `).join("") + `
+      <button class="btn btn-primary btn-block" id="submit-exercises-btn" disabled>Submit Answers (0/${exercises.length})</button>
+      <div id="exercises-result"></div>
+    `;
 
-    document.querySelectorAll(".exo-option").forEach((btn) => {
+    const submitBtn = document.getElementById("submit-exercises-btn");
+
+    document.querySelectorAll(".exo-select").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const correct = Number(btn.dataset.correct);
-        const idx = Number(btn.dataset.idx);
-        const group = document.querySelectorAll(`.exo-option[data-exo="${btn.dataset.exo}"]`);
-        group.forEach((b) => (b.style.pointerEvents = "none"));
-        if (idx === correct) {
-          btn.style.background = "var(--success-bg)"; btn.style.borderColor = "var(--success)"; btn.style.color = "var(--success)";
-        } else {
-          btn.style.background = "var(--danger-bg)"; btn.style.borderColor = "var(--danger)"; btn.style.color = "var(--danger)";
-          group[correct].style.background = "var(--success-bg)"; group[correct].style.borderColor = "var(--success)"; group[correct].style.color = "var(--success)";
-        }
+        const exoIdx = Number(btn.dataset.exo);
+        const optIdx = Number(btn.dataset.idx);
+        selections[exoIdx] = optIdx;
+
+        document.querySelectorAll(`.exo-select[data-exo="${exoIdx}"]`).forEach((b) => {
+          b.style.background = ""; b.style.borderColor = ""; b.style.color = "";
+        });
+        btn.style.background = "var(--row)"; btn.style.borderColor = "var(--primary)"; btn.style.color = "var(--primary)";
+
+        const answeredCount = selections.filter((s) => s !== null).length;
+        submitBtn.textContent = `Submit Answers (${answeredCount}/${exercises.length})`;
+        submitBtn.disabled = answeredCount < exercises.length;
       });
     });
 
-    const completeBtn = document.getElementById("complete-week-btn");
-    if (completeBtn) {
-      completeBtn.addEventListener("click", async () => {
-        completeBtn.disabled = true;
-        completeBtn.textContent = "Saving...";
-        try {
-          const { currentWeek } = await api.post("/students/me/advance-week", {});
-          completeBtn.textContent = `✅ Week complete! Moving to Week ${currentWeek}...`;
-          setTimeout(() => { window.location.href = "/student/dashboard.html"; }, 1200);
-        } catch (err) {
-          completeBtn.textContent = "Retry";
-          completeBtn.disabled = false;
-          alert(err.message);
+    submitBtn.addEventListener("click", async () => {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = `<span class="spinner"></span> Grading...`;
+      try {
+        const result = await api.post(`/courses/weeks/${week.number}/submit-exercises`, { answers: selections });
+
+        // Colore chaque question selon la correction reelle renvoyee par le serveur.
+        exercises.forEach((ex, i) => {
+          const isCorrect = result.results[i];
+          const correctBtn = document.querySelector(`.exo-select[data-exo="${i}"][data-idx="${ex.correct_index}"]`);
+          const chosenBtn = document.querySelector(`.exo-select[data-exo="${i}"][data-idx="${selections[i]}"]`);
+          document.querySelectorAll(`.exo-select[data-exo="${i}"]`).forEach((b) => (b.style.pointerEvents = "none"));
+          if (correctBtn) { correctBtn.style.background = "var(--success-bg)"; correctBtn.style.borderColor = "var(--success)"; correctBtn.style.color = "var(--success)"; }
+          if (!isCorrect && chosenBtn) { chosenBtn.style.background = "var(--danger-bg)"; chosenBtn.style.borderColor = "var(--danger)"; chosenBtn.style.color = "var(--danger)"; }
+        });
+
+        document.getElementById("exercises-result").innerHTML = `
+          <div class="card" style="text-align:center;background:${result.passed ? "var(--success-bg)" : "var(--danger-bg)"};color:${result.passed ? "var(--success)" : "var(--danger)"};margin-top:10px;">
+            <p style="font-size:22px;font-weight:800;">${result.scorePct}%</p>
+            <p style="font-size:12.5px;">${result.passed ? `Réussi ! (minimum ${result.passThreshold}%)` : `Pas encore assez (minimum ${result.passThreshold}%) — retente depuis l'onglet Grammar.`}</p>
+          </div>
+          ${renderCompleteWeekBlock(week)}
+        `;
+        bindCompleteWeekButton(week);
+        submitBtn.remove();
+      } catch (err) {
+        if (handlePaywallError(err)) return;
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Retry";
+        alert(err.message);
+      }
+    });
+    return;
+  }
+}
+
+function bindCompleteWeekButton(week) {
+  const completeBtn = document.getElementById("complete-week-btn");
+  if (completeBtn) {
+    completeBtn.addEventListener("click", async () => {
+      completeBtn.disabled = true;
+      completeBtn.textContent = "Saving...";
+      try {
+        const { currentWeek } = await api.post("/students/me/advance-week", {});
+        completeBtn.textContent = `✅ Week complete! Moving to Week ${currentWeek}...`;
+        setTimeout(() => { window.location.href = "/student/dashboard.html"; }, 1200);
+      } catch (err) {
+        completeBtn.textContent = `Mark Week ${week.number} complete → Continue to Week ${week.number + 1}`;
+        completeBtn.disabled = false;
+        const reasons = err.data?.reasons;
+        const box = document.getElementById("complete-week-reasons");
+        if (box) {
+          box.innerHTML = reasons?.length
+            ? reasons.map((r) => `<p style="font-size:12.5px;color:var(--danger);margin-top:6px;">⚠️ ${r}</p>`).join("")
+            : `<p style="font-size:12.5px;color:var(--danger);margin-top:6px;">⚠️ ${err.message}</p>`;
         }
-      });
-    }
+      }
+    });
   }
 }
 
@@ -133,6 +191,7 @@ function renderCompleteWeekBlock(week) {
     <div class="card" style="text-align:center;">
       <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">Terminé la grammaire, le vocabulaire et les exercices de cette semaine ?</p>
       <button class="btn btn-primary" id="complete-week-btn">Mark Week ${week.number} complete → Continue to Week ${week.number + 1}</button>
+      <div id="complete-week-reasons"></div>
     </div>
   `;
 }

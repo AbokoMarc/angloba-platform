@@ -171,16 +171,89 @@ export const EXERCISES = {
     { question: "She ___ from Douala.", options: ["am", "is", "are"], correctIndex: 1 },
     { question: "They ___ teachers.", options: ["am", "is", "are"], correctIndex: 2 },
     { question: "We ___ busy today.", options: ["am", "is", "are"], correctIndex: 2 },
+    { question: "He ___ not here.", options: ["is", "am", "are"], correctIndex: 0 },
   ],
   2: [
     { question: "I work → She ___", options: ["work", "works", "working"], correctIndex: 1 },
     { question: "They play → He ___", options: ["play", "plays", "playing"], correctIndex: 1 },
     { question: "Do you speak English? is the question form of:", options: ["You speak English.", "You are speaking English.", "You spoke English."], correctIndex: 0 },
+    { question: "___ she from Nigeria?", options: ["Is", "Are", "Do"], correctIndex: 0 },
+  ],
+  3: [
+    { question: "I ___ two brothers.", options: ["have", "has", "having"], correctIndex: 0 },
+    { question: "She ___ a car.", options: ["have", "has", "having"], correctIndex: 1 },
+    { question: "Plural of 'book':", options: ["books", "bookes", "book"], correctIndex: 0 },
+    { question: "Plural of 'child':", options: ["childs", "children", "childes"], correctIndex: 1 },
+  ],
+  4: [
+    { question: "This is Tom. ___ car is red.", options: ["My", "Your", "His"], correctIndex: 2 },
+    { question: "\"The teacher's book\" means:", options: ["the book of the teacher", "the book for a teacher", "the teacher is a book"], correctIndex: 0 },
+    { question: "My sister is very ___.", options: ["friendly", "friend", "friendship"], correctIndex: 0 },
+  ],
+  5: [
+    { question: "He ___ to work every day.", options: ["go", "goes", "going"], correctIndex: 1 },
+    { question: "They ___ football on Sundays.", options: ["play", "plays", "playing"], correctIndex: 0 },
+    { question: "___ you like coffee?", options: ["Do", "Does", "Are"], correctIndex: 0 },
+    { question: "She doesn't ___ meat.", options: ["eat", "eats", "eating"], correctIndex: 0 },
+  ],
+  6: [
+    { question: "___ a book on the table.", options: ["There is", "There are"], correctIndex: 0 },
+    { question: "___ three chairs in the room.", options: ["There is", "There are"], correctIndex: 1 },
+    { question: "The cat is ___ the box.", options: ["in", "on", "at"], correctIndex: 0 },
+    { question: "My house is ___ the corner.", options: ["in", "on", "at"], correctIndex: 1 },
+  ],
+  7: [
+    { question: "I need ___ rice.", options: ["a", "some", "many"], correctIndex: 1 },
+    { question: "How ___ apples do you have?", options: ["much", "many"], correctIndex: 1 },
+    { question: "There isn't ___ milk left.", options: ["some", "any"], correctIndex: 1 },
+    { question: "\"Water\" is:", options: ["countable", "uncountable"], correctIndex: 1 },
+  ],
+  8: [
+    { question: "Choose the correct sentence:", options: ["I always go to the gym.", "I go always to the gym.", "Always I go to the gym."], correctIndex: 0 },
+    { question: "She ___ swim very well.", options: ["can", "cans", "canning"], correctIndex: 0 },
+    { question: "___ you speak French?", options: ["Can", "Do can", "Cans"], correctIndex: 0 },
+  ],
+  9: [
+    { question: "Look! She ___ (run).", options: ["runs", "is running", "run"], correctIndex: 1 },
+    { question: "I usually ___ (wake up) at 6.", options: ["wake up", "am waking up"], correctIndex: 0 },
+    { question: "Right now, they ___ (study).", options: ["study", "are studying"], correctIndex: 1 },
+  ],
+  10: [
+    { question: "Yesterday, I ___ (work) late.", options: ["work", "worked", "working"], correctIndex: 1 },
+    { question: "She ___ (watch) TV last night.", options: ["watch", "watched", "watches"], correctIndex: 1 },
+    { question: "They didn't ___ (play) football.", options: ["play", "played", "plays"], correctIndex: 0 },
+  ],
+  11: [
+    { question: "Yesterday I ___ (go) to Douala.", options: ["go", "goed", "went"], correctIndex: 2 },
+    { question: "She ___ (see) a movie last week.", options: ["see", "saw", "seen"], correctIndex: 1 },
+    { question: "We ___ (eat) rice for lunch.", options: ["eat", "ate", "eaten"], correctIndex: 1 },
+  ],
+  12: [
+    { question: "___ do you live?", options: ["What", "Where", "Who"], correctIndex: 1 },
+    { question: "___ the door, please.", options: ["Close", "You close", "Closing"], correctIndex: 0 },
+    { question: "___ is your name?", options: ["What", "Where"], correctIndex: 0 },
+  ],
+  13: [
+    { question: "I ___ (visit) my family next week.", options: ["am going to visit", "go to visit"], correctIndex: 0 },
+    { question: "She ___ (start) a new job.", options: ["is going to start", "going start"], correctIndex: 0 },
+  ],
+  14: [
+    { question: "I think it ___ (rain) tomorrow.", options: ["will rain", "wills rain"], correctIndex: 0 },
+    { question: "___ you help me?", options: ["Will", "Wills"], correctIndex: 0 },
   ],
   15: [
     { question: "She ___ to the doctor yesterday.", options: ["should go", "should went", "went", "should to go"], correctIndex: 2 },
     { question: "You ___ rest if you are tired.", options: ["should", "shoulds", "shoulding"], correctIndex: 0 },
     { question: "___ I see a doctor?", options: ["Should", "Shoulds", "Do should"], correctIndex: 0 },
+  ],
+  16: [
+    { question: "I ___ (never/be) to London.", options: ["have never been", "has never been"], correctIndex: 0 },
+    { question: "She ___ (already/finish) her homework.", options: ["has already finished", "have already finished"], correctIndex: 0 },
+  ],
+  31: [
+    { question: "British 'flat' = American ___", options: ["apartment", "house", "room"], correctIndex: 0 },
+    { question: "British 'lift' = American ___", options: ["elevator", "stairs"], correctIndex: 0 },
+    { question: "British 'holiday' = American ___", options: ["vacation", "work"], correctIndex: 0 },
   ],
 };
 

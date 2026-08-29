@@ -38,6 +38,7 @@ const speechSupported = Boolean(SpeechRecognitionAPI);
     studentLevel = inferLevelFromMonth(profile?.current_month || 1);
     renderScenarioGrid();
   } catch (err) {
+    if (handlePaywallError(err)) return;
     document.getElementById("speaking-root").innerHTML = `<div class="empty-state">${err.message}</div>`;
   }
 })();
@@ -183,6 +184,7 @@ async function submitStudentTurn(text) {
     speak(reply);
     setStatus(speechSupported ? "Tap the mic and speak your answer clearly." : "Type your answer...");
   } catch (err) {
+    if (handlePaywallError(err)) return;
     setStatus(`⚠️ ${err.message}`);
   }
 }
@@ -214,6 +216,7 @@ async function finishSession() {
     });
     renderResults(scores);
   } catch (err) {
+    if (handlePaywallError(err)) return;
     finishBtn.disabled = false;
     finishBtn.textContent = "Finish & get my score";
     setStatus(`⚠️ ${err.message}`);

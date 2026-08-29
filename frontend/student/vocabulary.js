@@ -48,6 +48,7 @@
     draw();
     document.getElementById("search-input").addEventListener("input", (e) => draw(e.target.value));
   } catch (err) {
+    if (handlePaywallError(err)) return;
     root.innerHTML = `<div class="empty-state">${err.message}</div>`;
   }
 })();

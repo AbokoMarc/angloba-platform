@@ -18,7 +18,7 @@ let allTeachers = [];
       <div class="card" style="padding:0;overflow:hidden;">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Student</th><th>Teacher</th><th>Course</th><th>Progress</th><th>Week</th><th>Status</th></tr></thead>
+            <thead><tr><th>Student</th><th>Teacher</th><th>Course</th><th>Progress</th><th>Week</th><th>Subscription</th><th>Status</th></tr></thead>
             <tbody id="students-tbody"></tbody>
           </table>
         </div>
@@ -63,9 +63,12 @@ function draw(filter = "") {
         </div>
       </td>
       <td>
+        <span class="badge ${s.subscription_status === "active" ? "badge-success" : s.subscription_status === "trial" ? "badge-accent" : "badge-muted"}">${s.subscription_status || "trial"}</span>
+      </td>
+      <td>
         <button class="status-toggle badge ${s.status === "active" ? "badge-success" : "badge-muted"}" data-id="${s.id}" data-status="${s.status}">${s.status}</button>
       </td>
-    </tr>`).join("") : `<tr><td colspan="6" class="empty-state">Aucun élève.</td></tr>`;
+    </tr>`).join("") : `<tr><td colspan="7" class="empty-state">Aucun élève.</td></tr>`;
 
   tbody.querySelectorAll(".week-input").forEach((input) => {
     input.addEventListener("change", async () => {

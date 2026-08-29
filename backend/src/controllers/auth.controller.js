@@ -37,8 +37,8 @@ export async function register(req, res) {
     args: [id, name.trim(), email.toLowerCase().trim(), hash, salt],
   });
   await db.execute({
-    sql: `INSERT INTO student_profiles (user_id, teacher_id, current_month, current_week)
-          VALUES (?, NULL, 1, 1)`,
+    sql: `INSERT INTO student_profiles (user_id, teacher_id, current_month, current_week, subscription_status, trial_ends_at)
+          VALUES (?, NULL, 1, 1, 'trial', datetime('now', '+7 days'))`,
     args: [id],
   });
 
