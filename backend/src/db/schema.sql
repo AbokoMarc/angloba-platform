@@ -60,18 +60,18 @@ CREATE TABLE IF NOT EXISTS exercise_scores (
   UNIQUE(student_id, week_number)
 );
 
--- Paiements d'abonnement (CinetPay : Orange Money, MTN MoMo, Visa/Mastercard
--- en une seule integration).
+-- Paiements d'abonnement (CamPay : push Mobile Money direct MTN/Orange).
 CREATE TABLE IF NOT EXISTS payments (
-  id             TEXT PRIMARY KEY,
-  student_id     TEXT NOT NULL REFERENCES users(id),
-  transaction_id TEXT NOT NULL UNIQUE,
-  amount         INTEGER NOT NULL,
-  currency       TEXT NOT NULL DEFAULT 'XAF',
-  status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','success','failed')),
-  payment_method TEXT,
-  created_at     TEXT NOT NULL DEFAULT (datetime('now')),
-  confirmed_at   TEXT
+  id               TEXT PRIMARY KEY,
+  student_id       TEXT NOT NULL REFERENCES users(id),
+  transaction_id   TEXT NOT NULL UNIQUE,   -- notre reference interne (external_reference envoyee a CamPay)
+  campay_reference TEXT,                    -- reference renvoyee par CamPay, utilisee pour vérifier le statut
+  amount           INTEGER NOT NULL,
+  currency         TEXT NOT NULL DEFAULT 'XAF',
+  status           TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','success','failed')),
+  payment_method   TEXT,
+  created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+  confirmed_at     TEXT
 );
 
 -- Programme : 9 mois

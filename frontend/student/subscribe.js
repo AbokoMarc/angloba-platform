@@ -1,36 +1,16 @@
 // frontend/student/subscribe.js
 
+let pollTimer = null;
+
 (async () => {
   const ctx = await renderShell({ roles: ["student"], activeKey: "dashboard", title: "Subscription", subtitle: "Ton abonnement English Academy" });
   if (!ctx) return;
 
-  const root = document.getElementById("subscribe-root");
-  const params = new URLSearchParams(window.location.search);
-
   try {
     const { subscription, payments, plan } = await api.get("/payments/me");
     render(subscription, payments, plan);
-
-    // Retour depuis la page de paiement CinetPay : on force une verification.
-    if (params.get("status") === "return") {
-      const lastPending = payments.find((p) => p.status === "pending");
-      if (lastPending) {
-        root.insertAdjacentHTML("afterbegin", `<div class="card" id="checking-banner" style="background:color-mix(in srgb, var(--accent) 15%, white);text-align:center;"><span class="spinner"></span> Vérification du paiement...</div>`);
-        const check = await api.get(`/payments/status/${lastPending.transaction_id}`);
-        document.getElementById("checking-banner")?.remove();
-        if (check.status === "success") {
-          const fresh = await api.get("/payments/me");
-          render(fresh.subscription, fresh.payments, fresh.plan);
-          root.insertAdjacentHTML("afterbegin", `<div class="card" style="background:var(--success-bg);color:var(--success);text-align:center;">✅ Paiement confirmé ! Ton abonnement est actif.</div>`);
-        } else if (check.status === "pending") {
-          root.insertAdjacentHTML("afterbegin", `<div class="card" style="background:color-mix(in srgb, var(--accent) 15%, white);text-align:center;">⏳ Paiement en cours de traitement — recharge cette page dans une minute.</div>`);
-        } else {
-          root.insertAdjacentHTML("afterbegin", `<div class="card" style="background:var(--danger-bg);color:var(--danger);text-align:center;">Le paiement n'a pas abouti. Réessaie ci-dessous.</div>`);
-        }
-      }
-    }
   } catch (err) {
-    root.innerHTML = `<div class="empty-state">${err.message}</div>`;
+    document.getElementById("subscribe-root").innerHTML = `<div class="empty-state">${err.message}</div>`;
   }
 })();
 
@@ -63,12 +43,15 @@ function render(subscription, payments, plan) {
       <p style="font-weight:600;font-size:15px;margin-bottom:4px;">Abonnement mensuel</p>
       <p style="font-size:28px;font-weight:800;color:var(--primary);margin-bottom:2px;">${plan.price.toLocaleString()} ${plan.currency}<span style="font-size:13px;font-weight:500;color:var(--text-muted);"> / mois</span></p>
       <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">Accès complet : cours, exercices, Speaking Lab avec IA, corrections.</p>
-      <div class="stack" style="gap:8px;margin-bottom:14px;">
-        <div class="row" style="gap:8px;font-size:13px;color:var(--text-muted);">🟠 Orange Money</div>
-        <div class="row" style="gap:8px;font-size:13px;color:var(--text-muted);">🟡 MTN Mobile Money</div>
-        <div class="row" style="gap:8px;font-size:13px;color:var(--text-muted);">💳 Visa / Mastercard</div>
+
+      <div class="row" style="gap:8px;margin-bottom:12px;">
+        <span class="badge badge-accent">🟠 Orange Money</span>
+        <span class="badge badge-accent">🟡 MTN Mobile Money</span>
       </div>
-      <button class="btn btn-primary btn-block" id="pay-btn">${isActive ? "Renouveler maintenant" : "Payer et débloquer l'accès"}</button>
+
+      <label>Ton numéro Mobile Money</label>
+      <input type="tel" id="phone-input" placeholder="6XXXXXXXX ou 2XXXXXXXX" style="margin-bottom:10px;" />
+      <button class="btn btn-primary btn-block" id="pay-btn">${isActive ? "Renouveler maintenant" : "Recevoir la demande de paiement"}</button>
       <p id="pay-status" style="font-size:12px;text-align:center;margin-top:8px;"></p>
     </div>
 
@@ -86,17 +69,66 @@ function render(subscription, payments, plan) {
   `;
 
   document.getElementById("pay-btn").addEventListener("click", async (e) => {
+    const phoneInput = document.getElementById("phone-input");
+    let phone = phoneInput.value.replace(/\s/g, "");
+    if (/^[62]\d{8}$/.test(phone)) phone = "237" + phone; // ajoute l'indicatif si oublie
+
+    const statusEl = document.getElementById("pay-status");
+    if (!/^237[62]\d{8}$/.test(phone)) {
+      statusEl.textContent = "⚠️ Numéro invalide (format attendu : 6XXXXXXXX pour MTN, 2XXXXXXXX pour Orange).";
+      statusEl.style.color = "var(--danger)";
+      return;
+    }
+
     e.target.disabled = true;
-    e.target.innerHTML = `<span class="spinner"></span> Redirection...`;
+    e.target.innerHTML = `<span class="spinner"></span> Envoi de la demande...`;
+    statusEl.textContent = "";
+
     try {
-      const { paymentUrl } = await api.post("/payments/initiate", {});
-      window.location.href = paymentUrl;
+      const { transactionId } = await api.post("/payments/initiate", { phone });
+      e.target.innerHTML = `<span class="spinner"></span> Confirme sur ton téléphone...`;
+      statusEl.style.color = "var(--text-muted)";
+      statusEl.textContent = "Un code de confirmation a été envoyé sur ton téléphone. Compose ton code secret Mobile Money pour valider.";
+      pollPaymentStatus(transactionId, e.target, statusEl);
     } catch (err) {
-      document.getElementById("pay-status").textContent = `⚠️ ${err.message}`;
+      statusEl.textContent = `⚠️ ${err.message}`;
+      statusEl.style.color = "var(--danger)";
       e.target.disabled = false;
-      e.target.textContent = "Payer et débloquer l'accès";
+      e.target.textContent = isActive ? "Renouveler maintenant" : "Recevoir la demande de paiement";
     }
   });
+}
+
+function pollPaymentStatus(transactionId, button, statusEl) {
+  let attempts = 0;
+  const MAX_ATTEMPTS = 30; // ~2 minutes a 4s d'intervalle
+
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    attempts++;
+    try {
+      const { status } = await api.get(`/payments/status/${transactionId}`);
+      if (status === "success") {
+        clearInterval(pollTimer);
+        statusEl.style.color = "var(--success)";
+        statusEl.textContent = "✅ Paiement confirmé ! Ton abonnement est actif.";
+        button.textContent = "Payé !";
+        setTimeout(() => window.location.reload(), 1500);
+      } else if (status === "failed") {
+        clearInterval(pollTimer);
+        statusEl.style.color = "var(--danger)";
+        statusEl.textContent = "Le paiement a échoué ou a été annulé. Réessaie.";
+        button.disabled = false;
+        button.textContent = "Recevoir la demande de paiement";
+      } else if (attempts >= MAX_ATTEMPTS) {
+        clearInterval(pollTimer);
+        statusEl.style.color = "var(--text-muted)";
+        statusEl.textContent = "Toujours en attente — recharge cette page dans un instant si tu as déjà confirmé sur ton téléphone.";
+        button.disabled = false;
+        button.textContent = "Recevoir la demande de paiement";
+      }
+    } catch { /* on retente au prochain tick */ }
+  }, 4000);
 }
 
 function formatDate(str) {
