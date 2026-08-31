@@ -10,6 +10,9 @@ import * as speakingCtrl from "./controllers/speaking.controller.js";
 import * as mediaCtrl from "./controllers/media.controller.js";
 import * as appearanceCtrl from "./controllers/appearance.controller.js";
 import * as paymentsCtrl from "./controllers/payments.controller.js";
+import * as pushCtrl from "./controllers/push.controller.js";
+import * as eventsCtrl from "./controllers/events.controller.js";
+import * as engagementCtrl from "./controllers/engagement.controller.js";
 
 // Chaque route : [METHOD, regex-avec-groupes-nommes, handler]
 // params est extrait automatiquement des groupes nommes (?<id>...) etc.
@@ -69,9 +72,16 @@ export const routes = [
   ["POST", /^\/api\/media\/upload$/, mediaCtrl.uploadAudio],
   ["GET", /^\/api\/media$/, mediaCtrl.listAudio],
 
-  // --- Paiements (CinetPay : Orange Money, MTN MoMo, Visa/Mastercard) ---
+  // --- Paiements (NotchPay : Mobile Money + Visa/Mastercard) ---
   ["GET", /^\/api\/payments\/me$/, paymentsCtrl.myPayments],
   ["POST", /^\/api\/payments\/initiate$/, paymentsCtrl.initiate],
   ["GET", /^\/api\/payments\/status\/(?<transactionId>[^/]+)$/, paymentsCtrl.status],
   ["POST", /^\/api\/payments\/notify$/, paymentsCtrl.notify],
+
+  // --- Notifications push (double sens eleve <-> admin/systeme) ---
+  ["GET", /^\/api\/push\/vapid-public-key$/, pushCtrl.vapidPublicKey],
+  ["POST", /^\/api\/push\/subscribe$/, pushCtrl.subscribe],
+  ["POST", /^\/api\/events$/, eventsCtrl.createEvent],
+  ["POST", /^\/api\/admin\/notify$/, engagementCtrl.notifyStudent],
+  ["GET", /^\/api\/cron\/check-inactifs$/, engagementCtrl.checkInactive],
 ];

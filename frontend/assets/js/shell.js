@@ -173,7 +173,10 @@ function renderTopbar({ title, subtitle, roleLabel, roleIcon }) {
       <h1>${title}</h1>
       ${subtitle ? `<p class="sub">${subtitle}</p>` : ""}
     </div>
-    <span class="role-badge">${svgIcon(roleIcon)}<span class="label">${roleLabel}</span></span>
+    <div class="row" style="gap:8px;">
+      <span id="offline-indicator" class="badge badge-muted" style="display:none;"></span>
+      <span class="role-badge">${svgIcon(roleIcon)}<span class="label">${roleLabel}</span></span>
+    </div>
   `;
 }
 

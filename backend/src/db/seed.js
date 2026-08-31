@@ -40,7 +40,9 @@ async function runMigrations() {
     "ALTER TABLE student_profiles ADD COLUMN subscription_status TEXT NOT NULL DEFAULT 'trial'",
     "ALTER TABLE student_profiles ADD COLUMN trial_ends_at TEXT",
     "ALTER TABLE student_profiles ADD COLUMN subscription_expires_at TEXT",
+    "ALTER TABLE student_profiles ADD COLUMN last_active_at TEXT",
     "ALTER TABLE payments ADD COLUMN campay_reference TEXT",
+    "ALTER TABLE payments ADD COLUMN provider_reference TEXT",
   ];
   for (const sql of alters) {
     try {

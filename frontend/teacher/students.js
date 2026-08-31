@@ -26,10 +26,29 @@
             </div>
           </td>
           <td><span class="badge ${s.status === "active" ? "badge-success" : "badge-muted"}">${s.status}</span></td>
-        </tr>`).join("") : `<tr><td colspan="3" class="empty-state">Aucun élève.</td></tr>`;
+          <td><button class="btn btn-outline btn-sm remind-btn" data-id="${s.id}" data-name="${s.name}">🔔 Rappel</button></td>
+        </tr>`).join("") : `<tr><td colspan="4" class="empty-state">Aucun élève.</td></tr>`;
     }
     draw();
     document.getElementById("search-input").addEventListener("input", (e) => draw(e.target.value));
+
+    tbody.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".remind-btn");
+      if (!btn) return;
+      const message = prompt(`Message de rappel pour ${btn.dataset.name} :`, "N'oublie pas ta leçon d'anglais aujourd'hui ! 5 minutes suffisent 🔥");
+      if (!message) return;
+      btn.disabled = true;
+      btn.textContent = "Envoi...";
+      try {
+        await api.post("/admin/notify", { studentId: btn.dataset.id, title: "English Academy", body: message });
+        btn.textContent = "✅ Envoyé";
+        setTimeout(() => { btn.disabled = false; btn.innerHTML = "🔔 Rappel"; }, 2000);
+      } catch (err) {
+        alert(err.message);
+        btn.disabled = false;
+        btn.innerHTML = "🔔 Rappel";
+      }
+    });
   } catch (err) {
     document.getElementById("students-tbody").innerHTML = `<tr><td colspan="3" class="empty-state">${err.message}</td></tr>`;
   }

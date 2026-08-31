@@ -6,12 +6,13 @@
 // avec un handler "fetch"). Les appels a l'API restent toujours en reseau
 // direct (jamais mis en cache) puisque les donnees changent en permanence.
 
-const CACHE_NAME = "angloba-shell-v2";
+const CACHE_NAME = "angloba-shell-v3";
 const APP_SHELL = [
   "/index.html",
   "/connexion.html",
   "/inscription.html",
   "/connexion-staff.html",
+  "/offline.html",
   "/assets/css/base.css",
   "/assets/js/api.js",
   "/assets/js/shell.js",
@@ -61,8 +62,50 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         })
-        .catch(() => cached);
+        .catch(() => {
+          // Page jamais visitee/cachee ET hors-ligne : fallback pour que
+          // l'app ne reste jamais bloquee sur un ecran blanc/logo qui tourne.
+          if (event.request.mode === "navigate") return caches.match("/offline.html");
+          return cached;
+        });
       return cached || networkFetch;
     })
+  );
+});
+
+// --- Notifications Push ---
+// Reception d'une notif push (envoyee par le backend via web-push).
+self.addEventListener("push", (event) => {
+  let data = { title: "English Academy", body: "Tu as une nouvelle notification.", url: "/" };
+  try { data = { ...data, ...event.data.json() }; } catch { /* payload non-JSON, on garde les valeurs par defaut */ }
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: "/assets/icons/icon-192.png",
+      badge: "/assets/icons/icon-192.png",
+      vibrate: [100, 50, 100],
+      data: { url: data.url || "/" },
+    }).then(() => {
+      if ("setAppBadge" in self.navigator) self.navigator.setAppBadge(1).catch(() => {});
+    })
+  );
+});
+
+// Clic sur la notification : ouvre (ou reactive) l'onglet cible.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || "/";
+
+  event.waitUntil(
+    (async () => {
+      if ("clearAppBadge" in self.navigator) await self.navigator.clearAppBadge().catch(() => {});
+
+      const allClients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      const existing = allClients.find((c) => c.url.includes(targetUrl));
+      if (existing) return existing.focus();
+
+      return self.clients.openWindow(targetUrl);
+    })()
   );
 });

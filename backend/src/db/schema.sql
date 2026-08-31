@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS student_profiles (
   overall_pct   INTEGER NOT NULL DEFAULT 0,
   subscription_status   TEXT NOT NULL DEFAULT 'trial' CHECK (subscription_status IN ('trial','active','expired')),
   trial_ends_at          TEXT,
-  subscription_expires_at TEXT
+  subscription_expires_at TEXT,
+  last_active_at          TEXT   -- utilise par le streak et la relance automatique (cron inactifs)
 );
 
 -- Score obtenu par un eleve sur les exercices d'une semaine (dernier essai
@@ -60,18 +61,19 @@ CREATE TABLE IF NOT EXISTS exercise_scores (
   UNIQUE(student_id, week_number)
 );
 
--- Paiements d'abonnement (CamPay : push Mobile Money direct MTN/Orange).
+-- Paiements d'abonnement (NotchPay : Mobile Money + Visa/Mastercard en une
+-- seule integration, via redirection vers page hebergee).
 CREATE TABLE IF NOT EXISTS payments (
-  id               TEXT PRIMARY KEY,
-  student_id       TEXT NOT NULL REFERENCES users(id),
-  transaction_id   TEXT NOT NULL UNIQUE,   -- notre reference interne (external_reference envoyee a CamPay)
-  campay_reference TEXT,                    -- reference renvoyee par CamPay, utilisee pour vérifier le statut
-  amount           INTEGER NOT NULL,
-  currency         TEXT NOT NULL DEFAULT 'XAF',
-  status           TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','success','failed')),
-  payment_method   TEXT,
-  created_at       TEXT NOT NULL DEFAULT (datetime('now')),
-  confirmed_at     TEXT
+  id                 TEXT PRIMARY KEY,
+  student_id         TEXT NOT NULL REFERENCES users(id),
+  transaction_id     TEXT NOT NULL UNIQUE,   -- notre reference interne
+  provider_reference TEXT,                    -- reference NotchPay, utilisee pour verifier le statut
+  amount             INTEGER NOT NULL,
+  currency           TEXT NOT NULL DEFAULT 'XAF',
+  status             TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','success','failed')),
+  payment_method     TEXT,
+  created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+  confirmed_at       TEXT
 );
 
 -- Programme : 9 mois
@@ -193,3 +195,44 @@ CREATE INDEX IF NOT EXISTS idx_exercises_week ON exercises(week_id);
 CREATE INDEX IF NOT EXISTS idx_students_teacher ON student_profiles(teacher_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_student ON composition_submissions(student_id);
 CREATE INDEX IF NOT EXISTS idx_speaking_student ON speaking_sessions(student_id);
+
+-- ============================================================
+-- NOTIFICATIONS PUSH & ENGAGEMENT (double sens : eleve -> admin,
+-- admin/systeme -> eleve)
+-- ============================================================
+
+-- Abonnement push d'un navigateur/appareil (Web Push API standard).
+-- Une ligne par (utilisateur, appareil) — un meme compte peut avoir
+-- plusieurs appareils abonnes.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id),
+  role         TEXT NOT NULL,
+  endpoint     TEXT NOT NULL UNIQUE,
+  subscription_json TEXT NOT NULL,   -- {endpoint, keys:{p256dh,auth}} complet
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Journal des actions eleve qui declenchent une notification a l'admin
+-- (ex: "a commence le cours", "a echoue un exercice"...).
+CREATE TABLE IF NOT EXISTS events (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id),
+  type        TEXT NOT NULL,   -- 'COURS_COMMENCE' | 'COURS_TERMINE' | 'EXERCICE_ECHOUE' | ...
+  week_number INTEGER,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Historique des notifications envoyees (audit + eviter les doublons)
+CREATE TABLE IF NOT EXISTS notifications_log (
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id),
+  title      TEXT NOT NULL,
+  body       TEXT NOT NULL,
+  sent_by    TEXT,             -- 'system' (cron) ou l'id de l'admin/prof qui a envoye manuellement
+  sent_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_events_user ON events(user_id);
+CREATE INDEX IF NOT EXISTS idx_notif_log_user ON notifications_log(user_id);

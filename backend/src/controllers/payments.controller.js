@@ -4,7 +4,7 @@ import { db } from "../db/client.js";
 import { requireRole } from "../middleware/auth.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
 import { newId } from "../utils/ids.js";
-import { collectPayment, checkStatus } from "../services/campay.service.js";
+import { initializePayment, verifyPayment } from "../services/notchpay.service.js";
 
 const PLAN_PRICE = () => Number(process.env.PAYMENT_MONTHLY_PRICE || 5000);
 const PLAN_CURRENCY = () => process.env.PAYMENT_CURRENCY || "XAF";
@@ -32,43 +32,41 @@ export async function myPayments(req, res) {
   });
 }
 
-// POST /api/payments/initiate — body: { phone: "2376XXXXXXXX" }
-// Declenche le push Mobile Money direct sur le telephone de l'eleve.
+// POST /api/payments/initiate — body: { phone? } (optionnel, prefill mobile money)
+// Cree la transaction et renvoie l'URL de paiement NotchPay (Mobile Money OU carte,
+// choisi par l'eleve sur la page hebergee).
 export async function initiate(req, res) {
   const user = requireRole(req, res, "student");
   if (!user) return;
 
+  const userRow = (await db.execute({ sql: "SELECT email FROM users WHERE id = ?", args: [user.id] })).rows[0];
   const body = await readJsonBody(req);
-  const phone = (body.phone || "").replace(/\s|\+/g, "");
-  if (!/^237[62]\d{8}$/.test(phone)) {
-    return sendJson(res, 400, { error: "Numero invalide. Format attendu : 2376XXXXXXXX ou 2372XXXXXXXX (MTN ou Orange)." });
-  }
-
   const transactionId = newId("txn");
 
   try {
-    const { reference, status } = await collectPayment({
+    const { authorizationUrl, reference } = await initializePayment({
       amount: PLAN_PRICE(),
       currency: PLAN_CURRENCY(),
-      phone,
+      email: userRow.email,
+      phone: body.phone || undefined,
+      reference: transactionId,
       description: "Abonnement mensuel English Academy",
-      externalReference: transactionId,
+      callbackUrl: `${process.env.PUBLIC_APP_URL}/student/subscribe.html?status=return&ref=${transactionId}`,
     });
 
     await db.execute({
-      sql: `INSERT INTO payments (id, student_id, transaction_id, campay_reference, amount, currency, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      args: [newId("pay"), user.id, transactionId, reference, PLAN_PRICE(), PLAN_CURRENCY(), status],
+      sql: `INSERT INTO payments (id, student_id, transaction_id, provider_reference, amount, currency, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+      args: [newId("pay"), user.id, transactionId, reference, PLAN_PRICE(), PLAN_CURRENCY()],
     });
 
-    sendJson(res, 200, { transactionId, status });
+    sendJson(res, 200, { authorizationUrl, transactionId });
   } catch (err) {
     sendJson(res, 503, { error: err.message });
   }
 }
 
-// GET /api/payments/status/:transactionId — l'eleve (page d'abonnement) sonde
-// le statut toutes les quelques secondes jusqu'a confirmation ou echec.
+// GET /api/payments/status/:transactionId — la page de retour verifie l'issue
 export async function status(req, res, params) {
   const user = requireRole(req, res, "student");
   if (!user) return;
@@ -82,20 +80,20 @@ export async function status(req, res, params) {
   sendJson(res, 200, { status: payment?.status || "unknown" });
 }
 
-// POST /api/payments/notify — webhook CamPay (PUBLIC, pas de JWT). Configure
-// cette URL dans le dashboard CamPay (Settings de l'application), pas passee
-// par requete comme CinetPay. On ne fait jamais confiance au webhook seul :
-// on re-verifie toujours aupres de l'API CamPay avant d'activer quoi que ce soit.
+// POST /api/payments/notify — webhook NotchPay (PUBLIC, pas de JWT). A
+// configurer dans le dashboard NotchPay (Settings > Developer > Webhooks),
+// pas passe par requete. On ne fait jamais confiance au webhook seul : on
+// re-verifie toujours aupres de l'API NotchPay avant d'activer quoi que ce soit.
 export async function notify(req, res) {
   const body = await readJsonBody(req);
-  const reference = body.reference;
+  const reference = body?.data?.reference || body?.reference;
   if (reference) {
-    const payment = (await db.execute({ sql: "SELECT transaction_id FROM payments WHERE campay_reference = ?", args: [reference] })).rows[0];
+    const payment = (await db.execute({ sql: "SELECT transaction_id FROM payments WHERE provider_reference = ?", args: [reference] })).rows[0];
     if (payment) {
       await reconcileTransaction(payment.transaction_id).catch((err) => console.error("[payments/notify]", err.message));
     }
   }
-  sendJson(res, 200, { ok: true });
+  sendJson(res, 200, { ok: true }); // NotchPay attend un 200 rapide, sinon il reessaie
 }
 
 async function reconcileTransaction(transactionId) {
@@ -103,14 +101,14 @@ async function reconcileTransaction(transactionId) {
     sql: "SELECT * FROM payments WHERE transaction_id = ?",
     args: [transactionId],
   })).rows[0];
-  if (!payment || payment.status !== "pending") return; // deja traite ou inconnu
+  if (!payment || payment.status !== "pending") return;
 
-  const result = await checkStatus(payment.campay_reference);
+  const result = await verifyPayment(payment.provider_reference);
   if (result.status === "pending") return;
 
   await db.execute({
-    sql: "UPDATE payments SET status = ?, payment_method = ?, confirmed_at = datetime('now') WHERE transaction_id = ?",
-    args: [result.status, result.raw?.operator || null, transactionId],
+    sql: "UPDATE payments SET status = ?, confirmed_at = datetime('now') WHERE transaction_id = ?",
+    args: [result.status, transactionId],
   });
 
   if (result.status === "success") {

@@ -5,7 +5,9 @@ import { requireRole } from "../middleware/auth.js";
 import { requireActiveAccess } from "../middleware/subscription.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
 import { newId } from "../utils/ids.js";
+import { recordActivity } from "../utils/activity.js";
 import { correctionAssist } from "../services/ai.service.js";
+import { sendPushToRole } from "../services/webpush.service.js";
 
 const AI_AUTO_PASS_THRESHOLD = Number(process.env.AI_AUTO_PASS_THRESHOLD || 65);
 
@@ -58,6 +60,11 @@ export async function submitComposition(req, res, params) {
             VALUES (?, ?, ?, ?, ?, ?, ${body.submit ? "datetime('now')" : "NULL"})`,
       args: [id, params.id, user.id, body.text, wordCount, status],
     });
+  }
+  if (body.submit) {
+    await recordActivity(user.id);
+    sendPushToRole("admin", { title: "English Academy - Activité", body: `${user.name} a soumis une composition.`, url: "/teacher/corrections.html" }, "system").catch(() => {});
+    sendPushToRole("superadmin", { title: "English Academy - Activité", body: `${user.name} a soumis une composition.`, url: "/teacher/corrections.html" }, "system").catch(() => {});
   }
   sendJson(res, 200, { ok: true });
 }

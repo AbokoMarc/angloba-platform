@@ -10,6 +10,7 @@ import { requireRole, requirePermission } from "../middleware/auth.js";
 import { requireActiveAccess } from "../middleware/subscription.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
 import { newId } from "../utils/ids.js";
+import { recordActivity } from "../utils/activity.js";
 
 const EXERCISE_PASS_THRESHOLD = Number(process.env.EXERCISE_PASS_THRESHOLD || 60);
 
@@ -171,6 +172,8 @@ export async function submitExercises(req, res, params) {
           ON CONFLICT(student_id, week_number) DO UPDATE SET score_pct = excluded.score_pct, updated_at = datetime('now')`,
     args: [newId("xsc"), user.id, weekNum, scorePct],
   });
+
+  await recordActivity(user.id);
 
   sendJson(res, 200, { scorePct, results, passThreshold: EXERCISE_PASS_THRESHOLD, passed: scorePct >= EXERCISE_PASS_THRESHOLD });
 }

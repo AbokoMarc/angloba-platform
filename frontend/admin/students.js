@@ -18,7 +18,7 @@ let allTeachers = [];
       <div class="card" style="padding:0;overflow:hidden;">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Student</th><th>Teacher</th><th>Course</th><th>Progress</th><th>Week</th><th>Subscription</th><th>Status</th></tr></thead>
+            <thead><tr><th>Student</th><th>Teacher</th><th>Course</th><th>Progress</th><th>Week</th><th>Subscription</th><th>Status</th><th>Reminder</th></tr></thead>
             <tbody id="students-tbody"></tbody>
           </table>
         </div>
@@ -68,7 +68,10 @@ function draw(filter = "") {
       <td>
         <button class="status-toggle badge ${s.status === "active" ? "badge-success" : "badge-muted"}" data-id="${s.id}" data-status="${s.status}">${s.status}</button>
       </td>
-    </tr>`).join("") : `<tr><td colspan="7" class="empty-state">Aucun élève.</td></tr>`;
+      <td>
+        <button class="btn btn-outline btn-sm remind-btn" data-id="${s.id}" data-name="${s.name}">🔔 Rappel</button>
+      </td>
+    </tr>`).join("") : `<tr><td colspan="8" class="empty-state">Aucun élève.</td></tr>`;
 
   tbody.querySelectorAll(".week-input").forEach((input) => {
     input.addEventListener("change", async () => {
@@ -88,6 +91,24 @@ function draw(filter = "") {
       const student = allStudents.find((s) => s.id === btn.dataset.id);
       student.status = newStatus;
       draw(document.getElementById("search-input").value);
+    });
+  });
+
+  tbody.querySelectorAll(".remind-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const message = prompt(`Message de rappel pour ${btn.dataset.name} :`, "N'oublie pas ta leçon d'anglais aujourd'hui ! 5 minutes suffisent 🔥");
+      if (!message) return;
+      btn.disabled = true;
+      btn.textContent = "Envoi...";
+      try {
+        await api.post("/admin/notify", { studentId: btn.dataset.id, title: "English Academy", body: message });
+        btn.textContent = "✅ Envoyé";
+        setTimeout(() => { btn.disabled = false; btn.innerHTML = "🔔 Rappel"; }, 2000);
+      } catch (err) {
+        alert(err.message);
+        btn.disabled = false;
+        btn.innerHTML = "🔔 Rappel";
+      }
     });
   });
 }

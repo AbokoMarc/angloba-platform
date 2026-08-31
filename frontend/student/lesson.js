@@ -9,18 +9,40 @@ let weekData = null;
 
   const root = document.getElementById("lesson-root");
 
+  // 1) Affichage INSTANTANE depuis le cache local (IndexedDB), sans attendre
+  // le reseau — c'est ce qui permet a la page de s'ouvrir immediatement
+  // meme hors-ligne, au lieu de rester bloquee sur un chargement infini.
+  const lastWeekNum = Number(localStorage.getItem("angloba_last_week") || 1);
+  const cached = await getCachedWeekData(lastWeekNum);
+  if (cached) {
+    weekData = cached;
+    document.querySelector("#shell-topbar div").insertAdjacentHTML("beforeend", `<p class="sub">Week ${cached.week.number} · ${cached.week.grammar_title || ""}</p>`);
+    renderLesson();
+  } else {
+    root.innerHTML = `<div class="empty-state"><span class="spinner"></span></div>`;
+  }
+
+  // 2) En arriere-plan, on tente de recuperer les donnees fraiches. Si ca
+  // reussit, on met a jour le cache ET l'ecran. Si ca echoue (hors-ligne),
+  // on ne fait rien de plus — l'utilisateur a deja le contenu ci-dessus.
   try {
     const { profile } = await api.get("/students/me/dashboard");
     const weekNum = profile?.current_week || 1;
-    const { week, vocabulary, exercises } = await api.get(`/courses/weeks/${weekNum}`);
-    weekData = { week, vocabulary, exercises };
+    const fresh = await api.get(`/courses/weeks/${weekNum}`);
+    weekData = fresh;
+    localStorage.setItem("angloba_last_week", String(weekNum));
+    cacheWeekData(weekNum, fresh);
 
-    document.querySelector("#shell-topbar div").innerHTML += `<p class="sub">Week ${week.number} · ${week.grammar_title || ""}</p>`;
+    const topbarSub = document.querySelector("#shell-topbar .sub");
+    if (topbarSub) topbarSub.textContent = `Week ${fresh.week.number} · ${fresh.week.grammar_title || ""}`;
 
     renderLesson();
   } catch (err) {
     if (handlePaywallError(err)) return;
-    root.innerHTML = `<div class="empty-state">${err.message}</div>`;
+    if (!cached) {
+      root.innerHTML = `<div class="empty-state">📴 Impossible de charger ta leçon (hors-ligne et rien en cache pour l'instant). Connecte-toi une première fois à internet.</div>`;
+    }
+    // Si `cached` existe deja, l'utilisateur voit son contenu — on ne casse rien.
   }
 })();
 
@@ -125,6 +147,41 @@ function renderLesson() {
     submitBtn.addEventListener("click", async () => {
       submitBtn.disabled = true;
       submitBtn.innerHTML = `<span class="spinner"></span> Grading...`;
+
+      // Hors-ligne : on corrige localement (le corrige est deja dans les
+      // donnees en cache) et on met la vraie soumission en file d'attente
+      // pour la prochaine reconnexion — l'eleve n'est jamais bloque.
+      if (!navigator.onLine) {
+        const results = exercises.map((ex, i) => selections[i] === ex.correct_index);
+        const scorePct = Math.round((results.filter(Boolean).length / exercises.length) * 100);
+
+        await queuePendingAction({
+          url: `/courses/weeks/${week.number}/submit-exercises`,
+          method: "post",
+          body: { answers: selections },
+          description: `Exercices semaine ${week.number}`,
+        });
+
+        exercises.forEach((ex, i) => {
+          const isCorrect = results[i];
+          const correctBtn = document.querySelector(`.exo-select[data-exo="${i}"][data-idx="${ex.correct_index}"]`);
+          const chosenBtn = document.querySelector(`.exo-select[data-exo="${i}"][data-idx="${selections[i]}"]`);
+          document.querySelectorAll(`.exo-select[data-exo="${i}"]`).forEach((b) => (b.style.pointerEvents = "none"));
+          if (correctBtn) { correctBtn.style.background = "var(--success-bg)"; correctBtn.style.borderColor = "var(--success)"; correctBtn.style.color = "var(--success)"; }
+          if (!isCorrect && chosenBtn) { chosenBtn.style.background = "var(--danger-bg)"; chosenBtn.style.borderColor = "var(--danger)"; chosenBtn.style.color = "var(--danger)"; }
+        });
+
+        document.getElementById("exercises-result").innerHTML = `
+          <div class="card" style="text-align:center;background:var(--row);margin-top:10px;">
+            <p style="font-size:22px;font-weight:800;">${scorePct}%</p>
+            <p style="font-size:12.5px;color:var(--text-muted);">☁️ Résultat provisoire — sera confirmé et débloquera la semaine suivante dès ta reconnexion.</p>
+          </div>
+        `;
+        submitBtn.remove();
+        if (typeof updateOfflineIndicator === "function") updateOfflineIndicator();
+        return;
+      }
+
       try {
         const result = await api.post(`/courses/weeks/${week.number}/submit-exercises`, { answers: selections });
 

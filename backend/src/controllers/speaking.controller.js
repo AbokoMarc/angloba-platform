@@ -13,6 +13,7 @@ import { requireRole } from "../middleware/auth.js";
 import { requireActiveAccess } from "../middleware/subscription.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
 import { newId } from "../utils/ids.js";
+import { recordActivity } from "../utils/activity.js";
 import { speakingReply, speakingScore } from "../services/ai.service.js";
 
 // POST /api/speaking/turn
@@ -37,6 +38,7 @@ export async function speakingTurn(req, res) {
       history: body.history || [],
       studentMessage: body.studentMessage,
     });
+    await recordActivity(user.id);
     sendJson(res, 200, { reply });
   } catch (err) {
     sendJson(res, 503, { error: err.message });

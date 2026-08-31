@@ -8,6 +8,7 @@
 import { db } from "../db/client.js";
 import { requireRole, requirePermission } from "../middleware/auth.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
+import { recordActivity } from "../utils/activity.js";
 
 const EXERCISE_PASS_THRESHOLD = Number(process.env.EXERCISE_PASS_THRESHOLD || 60);
 const COMPOSITION_PASS_THRESHOLD = Number(process.env.COMPOSITION_PASS_THRESHOLD || 50);
@@ -171,5 +172,6 @@ export async function advanceMyWeek(req, res) {
     args: [nextWeekNumber, monthRow ? monthRow.number : profile.current_month, user.id],
   });
 
+  await recordActivity(user.id);
   sendJson(res, 200, { currentWeek: nextWeekNumber, currentMonth: monthRow ? monthRow.number : null });
 }

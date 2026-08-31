@@ -9,6 +9,7 @@
     "seed": "node src/db/seed.js"
   },
   "dependencies": {
-    "@libsql/client": "^0.14.0"
+    "@libsql/client": "^0.14.0",
+    "web-push": "^3.6.7"
   }
 }
