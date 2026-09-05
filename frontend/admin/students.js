@@ -63,7 +63,10 @@ function draw(filter = "") {
         </div>
       </td>
       <td>
-        <span class="badge ${s.subscription_status === "active" ? "badge-success" : s.subscription_status === "trial" ? "badge-accent" : "badge-muted"}">${s.subscription_status || "trial"}</span>
+        <div class="row" style="gap:4px;">
+          <span class="badge ${s.subscription_status === "active" ? "badge-success" : s.subscription_status === "trial" ? "badge-accent" : "badge-muted"}">${s.subscription_status || "trial"}</span>
+          <button class="btn btn-outline btn-sm unlock-btn" data-id="${s.id}" data-name="${s.name}">🔓 Débloquer</button>
+        </div>
       </td>
       <td>
         <button class="status-toggle badge ${s.status === "active" ? "badge-success" : "badge-muted"}" data-id="${s.id}" data-status="${s.status}">${s.status}</button>
@@ -91,6 +94,23 @@ function draw(filter = "") {
       const student = allStudents.find((s) => s.id === btn.dataset.id);
       student.status = newStatus;
       draw(document.getElementById("search-input").value);
+    });
+  });
+
+  tbody.querySelectorAll(".unlock-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const days = prompt(`Débloquer l'abonnement de ${btn.dataset.name} pour combien de jours ?`, "30");
+      if (!days || isNaN(Number(days))) return;
+      btn.disabled = true;
+      try {
+        await api.patch(`/students/${btn.dataset.id}`, { grantSubscriptionDays: Number(days) });
+        const student = allStudents.find((s) => s.id === btn.dataset.id);
+        if (student) student.subscription_status = "active";
+        draw(document.getElementById("search-input").value);
+      } catch (err) {
+        alert(err.message);
+        btn.disabled = false;
+      }
     });
   });
 

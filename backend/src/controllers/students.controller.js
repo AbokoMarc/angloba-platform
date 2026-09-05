@@ -71,6 +71,20 @@ export async function updateStudent(req, res, params) {
   if (body.currentMonth !== undefined) { fields.push("current_month = ?"); args.push(body.currentMonth); }
   if (body.currentWeek !== undefined) { fields.push("current_week = ?"); args.push(body.currentWeek); }
 
+  // L'admin peut debloquer manuellement l'abonnement d'un eleve (ex: paiement
+  // recu hors plateforme, geste commercial...) — sans passer par NotchPay.
+  if (body.grantSubscriptionDays !== undefined) {
+    const days = Number(body.grantSubscriptionDays);
+    const current = (await db.execute({ sql: "SELECT subscription_expires_at FROM student_profiles WHERE user_id = ?", args: [studentId] })).rows[0];
+    const base = current?.subscription_expires_at && new Date(current.subscription_expires_at + "Z") > new Date()
+      ? new Date(current.subscription_expires_at + "Z")
+      : new Date();
+    base.setDate(base.getDate() + days);
+    fields.push("subscription_status = 'active'");
+    fields.push("subscription_expires_at = ?");
+    args.push(base.toISOString().slice(0, 19).replace("T", " "));
+  }
+
   if (fields.length) {
     args.push(studentId);
     await db.execute({ sql: `UPDATE student_profiles SET ${fields.join(", ")} WHERE user_id = ?`, args });
