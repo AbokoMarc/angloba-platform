@@ -15,6 +15,7 @@ import { sendJson, readJsonBody } from "../utils/http.js";
 import { newId } from "../utils/ids.js";
 import { recordActivity } from "../utils/activity.js";
 import { speakingReply, speakingScore } from "../services/ai.service.js";
+import { sendPushToRole } from "../services/webpush.service.js";
 
 // POST /api/speaking/turn
 // body: { scenarioKey, level, history: [{from,text}], studentMessage }
@@ -67,6 +68,11 @@ export async function speakingFinish(req, res) {
             VALUES (?, ?, ?, ?, ?, ?)`,
       args: [id, user.id, scenario.id, JSON.stringify(body.transcript || []), JSON.stringify(scores), scores.feedback || ""],
     });
+    await recordActivity(user.id);
+
+    sendPushToRole("admin", { title: "English Academy - Speaking Lab", body: `${user.name} a terminé "${scenario.title}" — score ${scores.overall}%.`, url: "/admin/students.html" }, "system").catch(() => {});
+    sendPushToRole("superadmin", { title: "English Academy - Speaking Lab", body: `${user.name} a terminé "${scenario.title}" — score ${scores.overall}%.`, url: "/admin/students.html" }, "system").catch(() => {});
+
     sendJson(res, 200, { sessionId: id, scores });
   } catch (err) {
     sendJson(res, 503, { error: err.message });

@@ -75,3 +75,95 @@ export async function listAudio(req, res) {
   })).rows;
   sendJson(res, 200, { audios: rows });
 }
+
+// ============================================================
+// IMAGE LIBRARY — cartes de vocabulaire (mot anglais + traduction + image).
+// Deblocage progressif : l'eleve ne voit que les images dont week_number
+// est <= sa semaine actuelle (voir courses.controller / vocabulary front).
+// ============================================================
+
+// POST /api/media/images — url externe OU upload base64, au choix
+export async function uploadImage(req, res) {
+  const user = requireRole(req, res, "teacher", "admin", "superadmin");
+  if (!user) return;
+  if (user.role === "admin") {
+    const ok = await requirePermission(req, res, user, "can_manage_media");
+    if (!ok) return;
+  }
+
+  const body = await readJsonBody(req);
+  const { word, translationFr, weekNumber, imageUrl, fileBase64, fileExt } = body;
+  if (!word || !translationFr || (!imageUrl && !fileBase64)) {
+    return sendJson(res, 400, { error: "word, translationFr et (imageUrl ou fileBase64) sont requis." });
+  }
+
+  let url = imageUrl;
+  if (!url && fileBase64) {
+    const filename = `${newId("img")}.${fileExt || "png"}`;
+    fs.writeFileSync(path.join(UPLOAD_DIR, filename), Buffer.from(fileBase64, "base64"));
+    url = `${process.env.PUBLIC_UPLOAD_BASE_URL || "http://localhost:4000/uploads"}/${filename}`;
+  }
+
+  const id = newId("img");
+  await db.execute({
+    sql: `INSERT INTO media_images (id, word, translation_fr, image_url, week_number, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)`,
+    args: [id, word, translationFr, url, weekNumber || null, user.id],
+  });
+  sendJson(res, 201, { id, url });
+}
+
+// GET /api/media/images — pour l'admin (toutes) ET l'eleve (deblocage progressif applique par le front)
+export async function listImages(req, res) {
+  const user = requireRole(req, res, "student", "teacher", "admin", "superadmin");
+  if (!user) return;
+  const rows = (await db.execute({
+    sql: `SELECT mi.*, u.name as uploaded_by_name FROM media_images mi
+          LEFT JOIN users u ON u.id = mi.uploaded_by ORDER BY mi.week_number ASC, mi.created_at ASC`,
+    args: [],
+  })).rows;
+  sendJson(res, 200, { images: rows });
+}
+
+// ============================================================
+// VIDEO LIBRARY — URL externe (YouTube/Vimeo/mp4 heberge) ou upload direct.
+// ============================================================
+
+export async function uploadVideo(req, res) {
+  const user = requireRole(req, res, "teacher", "admin", "superadmin");
+  if (!user) return;
+  if (user.role === "admin") {
+    const ok = await requirePermission(req, res, user, "can_manage_media");
+    if (!ok) return;
+  }
+
+  const body = await readJsonBody(req);
+  const { title, category, weekNumber, videoUrl, fileBase64, fileExt } = body;
+  if (!title || (!videoUrl && !fileBase64)) {
+    return sendJson(res, 400, { error: "title et (videoUrl ou fileBase64) sont requis." });
+  }
+
+  let url = videoUrl;
+  if (!url && fileBase64) {
+    const filename = `${newId("vid")}.${fileExt || "mp4"}`;
+    fs.writeFileSync(path.join(UPLOAD_DIR, filename), Buffer.from(fileBase64, "base64"));
+    url = `${process.env.PUBLIC_UPLOAD_BASE_URL || "http://localhost:4000/uploads"}/${filename}`;
+  }
+
+  const id = newId("vid");
+  await db.execute({
+    sql: `INSERT INTO media_videos (id, title, url, category, week_number, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)`,
+    args: [id, title, url, category || "lesson", weekNumber || null, user.id],
+  });
+  sendJson(res, 201, { id, url });
+}
+
+export async function listVideos(req, res) {
+  const user = requireRole(req, res, "student", "teacher", "admin", "superadmin");
+  if (!user) return;
+  const rows = (await db.execute({
+    sql: `SELECT mv.*, u.name as uploaded_by_name FROM media_videos mv
+          LEFT JOIN users u ON u.id = mv.uploaded_by ORDER BY mv.created_at DESC`,
+    args: [],
+  })).rows;
+  sendJson(res, 200, { videos: rows });
+}

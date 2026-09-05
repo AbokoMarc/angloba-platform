@@ -5,6 +5,7 @@ import { signToken } from "../utils/jwt.js";
 import { newId } from "../utils/ids.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
 import { requireAuth } from "../middleware/auth.js";
+import { sendPushToRole } from "../services/webpush.service.js";
 
 // POST /api/auth/register  — INSCRIPTION LIBRE, reservee aux ELEVES.
 // Les comptes professeur/admin ne peuvent JAMAIS s'auto-inscrire ici :
@@ -69,6 +70,12 @@ export async function login(req, res) {
   }
 
   const token = signToken({ sub: user.id, role: user.role, name: user.name });
+
+  if (user.role === "student") {
+    sendPushToRole("admin", { title: "English Academy - Connexion", body: `${user.name} vient de se connecter.`, url: "/admin/students.html" }, "system").catch(() => {});
+    sendPushToRole("superadmin", { title: "English Academy - Connexion", body: `${user.name} vient de se connecter.`, url: "/admin/students.html" }, "system").catch(() => {});
+  }
+
   sendJson(res, 200, {
     token,
     user: { id: user.id, role: user.role, name: user.name, email: user.email },

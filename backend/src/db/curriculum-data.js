@@ -271,39 +271,42 @@ export const COMPOSITIONS = [
 ];
 
 // Scenarios du Speaking Lab — l'IA joue le personnage, calibree sur le niveau de l'eleve.
+// weekNumber : semaine du programme a laquelle ce scenario sert de condition
+// de deblocage (l'eleve doit obtenir >= 70% de prononciation/global une fois
+// avant de pouvoir avancer au-dela de cette semaine).
 export const SPEAKING_SCENARIOS = [
   {
-    key: "doctor", title: "At the Doctor", emoji: "🧑‍⚕️", level: "Beginner",
+    key: "doctor", title: "At the Doctor", emoji: "🧑‍⚕️", level: "Beginner", weekNumber: 15,
     aiPersona: "Dr. Johnson, a friendly and patient doctor",
     aiOpening: "Good morning! I'm Dr. Johnson. Please sit down. What seems to be the problem today?",
     goal: "Practice describing symptoms and understanding advice with SHOULD/SHOULDN'T (Week 15: Health).",
   },
   {
-    key: "restaurant", title: "At the Restaurant", emoji: "🍔", level: "Beginner",
+    key: "restaurant", title: "At the Restaurant", emoji: "🍔", level: "Beginner", weekNumber: 7,
     aiPersona: "a polite waiter/waitress at a busy restaurant",
     aiOpening: "Good evening! Welcome. Can I take your order, or would you like a few more minutes?",
     goal: "Practice ordering food and polite requests (Can I have...? I would like...).",
   },
   {
-    key: "interview", title: "Job Interview", emoji: "💼", level: "Intermediate",
+    key: "interview", title: "Job Interview", emoji: "💼", level: "Intermediate", weekNumber: 24,
     aiPersona: "a professional hiring manager conducting a job interview",
     aiOpening: "Thanks for coming in today. So, tell me a little about yourself.",
     goal: "Practice answering common interview questions using Past + Present + Future structure.",
   },
   {
-    key: "hotel", title: "At the Hotel", emoji: "🏨", level: "Beginner",
+    key: "hotel", title: "At the Hotel", emoji: "🏨", level: "Beginner", weekNumber: 19,
     aiPersona: "a hotel receptionist",
     aiOpening: "Good afternoon, welcome to our hotel. Do you have a reservation?",
     goal: "Practice booking a room and using 'would like' politely.",
   },
   {
-    key: "phone", title: "Phone Call", emoji: "📞", level: "Intermediate",
+    key: "phone", title: "Phone Call", emoji: "📞", level: "Intermediate", weekNumber: 21,
     aiPersona: "an office assistant answering the phone",
     aiOpening: "Hello, thank you for calling. How can I help you today?",
     goal: "Practice phone English: Can I speak to...? Can I leave a message?",
   },
   {
-    key: "airport", title: "At the Airport", emoji: "✈️", level: "Beginner",
+    key: "airport", title: "At the Airport", emoji: "✈️", level: "Beginner", weekNumber: 12,
     aiPersona: "an airline check-in agent",
     aiOpening: "Good morning, may I see your passport and ticket, please?",
     goal: "Practice travel vocabulary and answering simple direct questions.",

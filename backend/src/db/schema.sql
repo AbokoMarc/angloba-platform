@@ -152,7 +152,8 @@ CREATE TABLE IF NOT EXISTS speaking_scenarios (
   ai_persona TEXT NOT NULL,     -- ex: "Dr. Johnson, a friendly doctor"
   ai_opening TEXT NOT NULL,     -- premiere ligne de l'IA
   goal       TEXT NOT NULL,     -- objectif pedagogique donne a l'IA
-  audio_url  TEXT                -- optionnel : audio d'exemple uploade par prof/admin
+  audio_url  TEXT,               -- optionnel : audio d'exemple uploade par prof/admin
+  week_number INTEGER            -- semaine a laquelle ce scenario est rattache (deblocage progression)
 );
 
 -- Historique des sessions de speaking (pour progression + relecture prof)
@@ -186,6 +187,7 @@ CREATE TABLE IF NOT EXISTS appearance_settings (
   logo_glyph     TEXT NOT NULL DEFAULT 'E',
   theme_primary  TEXT NOT NULL DEFAULT '#0F2544',
   theme_accent   TEXT NOT NULL DEFAULT '#E8834A',
+  show_leaderboard INTEGER NOT NULL DEFAULT 1,
   nav_items_json TEXT NOT NULL DEFAULT '[{"key":"dashboard","label":"Dashboard","icon":"grid"},{"key":"journey","label":"My Journey","icon":"compass"},{"key":"lesson","label":"Current Lesson","icon":"book"},{"key":"speaking","label":"Speaking Lab","icon":"mic"},{"key":"vocabulary","label":"Vocabulary","icon":"bookmark"},{"key":"compositions","label":"Compositions","icon":"file"},{"key":"progress","label":"My Progress","icon":"chart"}]'
 );
 
@@ -236,3 +238,46 @@ CREATE TABLE IF NOT EXISTS notifications_log (
 CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions(user_id);
 CREATE INDEX IF NOT EXISTS idx_events_user ON events(user_id);
 CREATE INDEX IF NOT EXISTS idx_notif_log_user ON notifications_log(user_id);
+
+-- ============================================================
+-- IMAGES, VIDEOS, QUIZ QUOTIDIEN
+-- ============================================================
+
+-- Bibliotheque d'images de vocabulaire (mot anglais + traduction + image).
+-- Le nombre affiche a l'eleve augmente au fur et a mesure qu'il avance
+-- dans le programme (voir logique cote controller).
+CREATE TABLE IF NOT EXISTS media_images (
+  id            TEXT PRIMARY KEY,
+  word          TEXT NOT NULL,
+  translation_fr TEXT NOT NULL,
+  image_url     TEXT NOT NULL,
+  week_number   INTEGER,           -- semaine minimale pour debloquer cette image (ordre de deblocage)
+  uploaded_by   TEXT REFERENCES users(id),
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Bibliotheque de videos (URL externe ou uploadee).
+CREATE TABLE IF NOT EXISTS media_videos (
+  id          TEXT PRIMARY KEY,
+  title       TEXT NOT NULL,
+  url         TEXT NOT NULL,
+  category    TEXT NOT NULL DEFAULT 'lesson',
+  week_number INTEGER,
+  uploaded_by TEXT REFERENCES users(id),
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Historique des quiz quotidiens (20 questions, difficulte croissante).
+CREATE TABLE IF NOT EXISTS daily_quiz_attempts (
+  id              TEXT PRIMARY KEY,
+  student_id      TEXT NOT NULL REFERENCES users(id),
+  quiz_date       TEXT NOT NULL,   -- 'YYYY-MM-DD', un quiz credite max par jour
+  score_pct       INTEGER NOT NULL,
+  total_questions INTEGER NOT NULL,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(student_id, quiz_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_media_images_week ON media_images(week_number);
+CREATE INDEX IF NOT EXISTS idx_media_videos_week ON media_videos(week_number);
+CREATE INDEX IF NOT EXISTS idx_daily_quiz_student ON daily_quiz_attempts(student_id);

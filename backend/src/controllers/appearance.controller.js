@@ -39,6 +39,7 @@ export async function updateAppearance(req, res) {
     if (body[key] !== undefined) { fields.push(`${col} = ?`); args.push(body[key]); }
   }
   if (body.navItems !== undefined) { fields.push("nav_items_json = ?"); args.push(JSON.stringify(body.navItems)); }
+  if (body.showLeaderboard !== undefined) { fields.push("show_leaderboard = ?"); args.push(body.showLeaderboard ? 1 : 0); }
 
   if (fields.length) {
     await db.execute({ sql: `UPDATE appearance_settings SET ${fields.join(", ")} WHERE id = 1`, args });

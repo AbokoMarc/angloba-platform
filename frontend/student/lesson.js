@@ -77,20 +77,30 @@ function renderLesson() {
   const tabContent = document.getElementById("tab-content");
   if (currentTab === "grammar") {
     tabContent.innerHTML = `
-      <div class="card">${week.grammar_html || "<p>Contenu à venir.</p>"}</div>
+      <div class="card">
+        <button class="btn btn-outline btn-sm read-aloud-btn" id="read-grammar-btn" style="margin-bottom:10px;">${icon("volume")} Écouter la leçon</button>
+        <div id="grammar-html-content">${week.grammar_html || "<p>Contenu à venir.</p>"}</div>
+      </div>
       <div class="card" style="margin-top:12px;">
         <p style="font-weight:600;font-size:13.5px;margin-bottom:8px;">🎯 Speaking task for this week</p>
         <p style="font-size:13.5px;color:var(--text-muted);">${week.speaking_task || "—"}</p>
         <a href="/student/speaking-lab.html" class="btn btn-accent btn-sm" style="margin-top:10px;">Practice in Speaking Lab ${icon("arrowRight")}</a>
       </div>
     `;
+    document.getElementById("read-grammar-btn").addEventListener("click", (e) => {
+      const text = document.getElementById("grammar-html-content").textContent;
+      speakText(text, e.currentTarget);
+    });
   } else if (currentTab === "vocabulary") {
     tabContent.innerHTML = `
       <div class="grid grid-2">
         ${vocabulary.length ? vocabulary.map((v) => `
           <div class="card">
             <div class="row-between">
-              <span style="font-weight:600;font-size:13.5px;">${v.word}</span>
+              <span class="row" style="gap:6px;">
+                <span style="font-weight:600;font-size:13.5px;">${v.word}</span>
+                <button class="speak-word-btn" data-word="${v.word}" style="color:var(--text-muted);">${icon("volume")}</button>
+              </span>
               <span class="badge badge-muted">${v.word_type || ""}</span>
             </div>
             <p style="font-size:12px;color:var(--text-muted);margin-top:4px;">FR ${v.fr || ""}</p>
@@ -101,6 +111,9 @@ function renderLesson() {
           </div>`).join("") : `<div class="empty-state">Pas encore de vocabulaire pour cette semaine.</div>`}
       </div>
     `;
+    document.querySelectorAll(".speak-word-btn").forEach((btn) => {
+      btn.addEventListener("click", () => speakText(btn.dataset.word, btn));
+    });
   } else if (currentTab === "exercises") {
     if (!exercises.length) {
       tabContent.innerHTML = `<div class="empty-state">Pas encore d'exercices pour cette semaine.</div>` + renderCompleteWeekBlock(week);
@@ -251,4 +264,21 @@ function renderCompleteWeekBlock(week) {
       <div id="complete-week-reasons"></div>
     </div>
   `;
+}
+
+// Lecture a voix haute (Web Speech API, gratuite, aucune cle requise) —
+// utilisee par le bouton "Écouter la leçon" (Grammar) et chaque mot de
+// vocabulaire. Feedback visuel discret pendant la lecture.
+function speakText(text, buttonEl) {
+  if (!("speechSynthesis" in window) || !text) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "en-US";
+  utterance.rate = 0.95;
+  if (buttonEl) {
+    const original = buttonEl.innerHTML;
+    utterance.onstart = () => { buttonEl.style.opacity = "0.5"; };
+    utterance.onend = () => { buttonEl.style.opacity = "1"; };
+  }
+  window.speechSynthesis.speak(utterance);
 }

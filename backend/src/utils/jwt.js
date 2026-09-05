@@ -20,7 +20,10 @@ function base64urlDecode(str) {
 }
 
 const SECRET = () => process.env.JWT_SECRET || "dev-secret-change-me";
-const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 jours
+// Comme une vraie app mobile (WhatsApp, Instagram...) : la session reste
+// valide tres longtemps, jusqu'a deconnexion manuelle — pas de "vous avez
+// ete deconnecte" surprise apres quelques jours d'inactivite.
+const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 365; // 1 an
 
 export function signToken(payload, ttlSeconds = DEFAULT_TTL_SECONDS) {
   const header = { alg: "HS256", typ: "JWT" };

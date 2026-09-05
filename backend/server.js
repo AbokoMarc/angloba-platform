@@ -15,10 +15,12 @@ import { ensureSchemaAndSeed } from "./src/db/seed.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = path.join(__dirname, "uploads");
+const SEED_AUDIO_DIR = path.join(__dirname, "seed-audio");
+const SEED_IMAGES_DIR = path.join(__dirname, "seed-images");
 const PORT = process.env.PORT || 4000;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
 
-const MIME = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", m4a: "audio/mp4" };
+const MIME = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", m4a: "audio/mp4", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif" };
 
 const server = http.createServer(async (req, res) => {
   // CORS — necessaire car le frontend statique (Vercel/Netlify) et l'API
@@ -36,6 +38,31 @@ const server = http.createServer(async (req, res) => {
     const filename = pathname.replace("/uploads/", "");
     const filePath = path.join(UPLOAD_DIR, filename);
     if (fs.existsSync(filePath) && filePath.startsWith(UPLOAD_DIR)) {
+      const ext = filename.split(".").pop();
+      res.writeHead(200, { "Content-Type": MIME[ext] || "application/octet-stream" });
+      return fs.createReadStream(filePath).pipe(res);
+    }
+    res.writeHead(404); return res.end();
+  }
+
+  // Audios de demonstration livres avec le repo (seed-audio/), toujours
+  // disponibles meme sur un disque ephemere puisqu'ils sont dans le code.
+  if (pathname.startsWith("/seed-audio/")) {
+    const filename = pathname.replace("/seed-audio/", "");
+    const filePath = path.join(SEED_AUDIO_DIR, filename);
+    if (fs.existsSync(filePath) && filePath.startsWith(SEED_AUDIO_DIR)) {
+      const ext = filename.split(".").pop();
+      res.writeHead(200, { "Content-Type": MIME[ext] || "application/octet-stream" });
+      return fs.createReadStream(filePath).pipe(res);
+    }
+    res.writeHead(404); return res.end();
+  }
+
+  // Images de vocabulaire livrees avec le repo (seed-images/).
+  if (pathname.startsWith("/seed-images/")) {
+    const filename = pathname.replace("/seed-images/", "");
+    const filePath = path.join(SEED_IMAGES_DIR, filename);
+    if (fs.existsSync(filePath) && filePath.startsWith(SEED_IMAGES_DIR)) {
       const ext = filename.split(".").pop();
       res.writeHead(200, { "Content-Type": MIME[ext] || "application/octet-stream" });
       return fs.createReadStream(filePath).pipe(res);

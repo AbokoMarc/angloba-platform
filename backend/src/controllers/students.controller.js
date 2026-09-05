@@ -9,9 +9,11 @@ import { db } from "../db/client.js";
 import { requireRole, requirePermission } from "../middleware/auth.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
 import { recordActivity } from "../utils/activity.js";
+import { sendPushToRole } from "../services/webpush.service.js";
 
 const EXERCISE_PASS_THRESHOLD = Number(process.env.EXERCISE_PASS_THRESHOLD || 60);
 const COMPOSITION_PASS_THRESHOLD = Number(process.env.COMPOSITION_PASS_THRESHOLD || 50);
+const SPEAKING_PASS_THRESHOLD = Number(process.env.SPEAKING_PASS_THRESHOLD || 70);
 
 const STUDENT_SELECT = `
   SELECT u.id, u.name, u.email, u.status,
@@ -96,6 +98,30 @@ export async function myDashboard(req, res) {
   sendJson(res, 200, { profile: result.rows[0] || null });
 }
 
+// GET /api/students/leaderboard — classement des eleves (desactivable par
+// l'admin dans Appearance). Trie par semaine actuelle puis score global —
+// avance dans le programme compte plus qu'un bon score sur peu de contenu.
+export async function leaderboard(req, res) {
+  const user = requireRole(req, res, "student", "teacher", "admin", "superadmin");
+  if (!user) return;
+
+  const settings = (await db.execute({ sql: "SELECT show_leaderboard FROM appearance_settings WHERE id = 1", args: [] })).rows[0];
+  if (settings && settings.show_leaderboard === 0 && user.role === "student") {
+    return sendJson(res, 200, { enabled: false, entries: [] });
+  }
+
+  const rows = (await db.execute({
+    sql: `SELECT u.id, u.name, sp.current_week, sp.current_month, sp.overall_pct, sp.streak_days
+          FROM student_profiles sp JOIN users u ON u.id = sp.user_id
+          WHERE u.status = 'active'
+          ORDER BY sp.current_week DESC, sp.overall_pct DESC
+          LIMIT 50`,
+    args: [],
+  })).rows;
+
+  sendJson(res, 200, { enabled: true, entries: rows, meId: user.role === "student" ? user.id : null });
+}
+
 // POST /api/students/me/advance-week — l'eleve marque sa semaine actuelle
 // comme terminee et passe a la suivante.
 //
@@ -153,6 +179,23 @@ export async function advanceMyWeek(req, res) {
     }
   }
 
+  // Condition 3 : scenario de Speaking Lab rattache a cette semaine — un
+  // score >= SPEAKING_PASS_THRESHOLD suffit (delibbrement pas plus exigeant,
+  // pour ne pas bloquer l'eleve indefiniment sur la prononciation).
+  const speakingScenario = (await db.execute({ sql: "SELECT id, title FROM speaking_scenarios WHERE week_number = ?", args: [currentWeek] })).rows[0];
+  if (speakingScenario) {
+    const bestSession = (await db.execute({
+      sql: "SELECT scores_json FROM speaking_sessions WHERE student_id = ? AND scenario_id = ? ORDER BY created_at DESC",
+      args: [user.id, speakingScenario.id],
+    })).rows;
+    const passed = bestSession.some((s) => {
+      try { return JSON.parse(s.scores_json).overall >= SPEAKING_PASS_THRESHOLD; } catch { return false; }
+    });
+    if (!passed) {
+      missing.push(`Termine le Speaking Lab "${speakingScenario.title}" avec un score d'au moins ${SPEAKING_PASS_THRESHOLD}%.`);
+    }
+  }
+
   if (missing.length) {
     return sendJson(res, 403, { error: "Conditions non remplies pour avancer.", reasons: missing });
   }
@@ -173,5 +216,9 @@ export async function advanceMyWeek(req, res) {
   });
 
   await recordActivity(user.id);
+
+  sendPushToRole("admin", { title: "English Academy - Progression", body: `${user.name} passe à la semaine ${nextWeekNumber}. 🎉`, url: "/admin/students.html" }, "system").catch(() => {});
+  sendPushToRole("superadmin", { title: "English Academy - Progression", body: `${user.name} passe à la semaine ${nextWeekNumber}. 🎉`, url: "/admin/students.html" }, "system").catch(() => {});
+
   sendJson(res, 200, { currentWeek: nextWeekNumber, currentMonth: monthRow ? monthRow.number : null });
 }

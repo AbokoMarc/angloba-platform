@@ -261,6 +261,10 @@ async function renderShell({ roles, activeKey, title, subtitle }) {
   renderTopbar({ title, subtitle, roleLabel, roleIcon });
   bindLogout();
 
+  // L'ouverture de l'app compte comme "lue" -> on remet le badge a zero.
+  if ("clearAppBadge" in navigator) navigator.clearAppBadge().catch(() => {});
+  if (typeof resetBadgeCount === "function") resetBadgeCount();
+
   return { user: me, appearance };
 }
 

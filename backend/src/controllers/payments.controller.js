@@ -5,6 +5,7 @@ import { requireRole } from "../middleware/auth.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
 import { newId } from "../utils/ids.js";
 import { initializePayment, verifyPayment } from "../services/notchpay.service.js";
+import { sendPushToUser, sendPushToRole } from "../services/webpush.service.js";
 
 const PLAN_PRICE = () => Number(process.env.PAYMENT_MONTHLY_PRICE || 5000);
 const PLAN_CURRENCY = () => process.env.PAYMENT_CURRENCY || "XAF";
@@ -126,5 +127,11 @@ async function reconcileTransaction(transactionId) {
       sql: "UPDATE student_profiles SET subscription_status = 'active', subscription_expires_at = ? WHERE user_id = ?",
       args: [base.toISOString().slice(0, 19).replace("T", " "), payment.student_id],
     });
+
+    const student = (await db.execute({ sql: "SELECT name FROM users WHERE id = ?", args: [payment.student_id] })).rows[0];
+
+    sendPushToUser(payment.student_id, { title: "English Academy", body: "✅ Paiement confirmé ! Ton abonnement est actif.", url: "/student/subscribe.html" }, "system").catch(() => {});
+    sendPushToRole("admin", { title: "English Academy - Paiement", body: `${student?.name || "Un élève"} vient de payer son abonnement. 💰`, url: "/admin/students.html" }, "system").catch(() => {});
+    sendPushToRole("superadmin", { title: "English Academy - Paiement", body: `${student?.name || "Un élève"} vient de payer son abonnement. 💰`, url: "/admin/students.html" }, "system").catch(() => {});
   }
 }

@@ -6,6 +6,14 @@
 // avec un handler "fetch"). Les appels a l'API restent toujours en reseau
 // direct (jamais mis en cache) puisque les donnees changent en permanence.
 
+// frontend/service-worker.js
+//
+// Mise en cache de l'app shell + notifications push. Utilise offline-store.js
+// (memes fonctions IndexedDB que les pages, importees ici via importScripts —
+// aucune dependance externe).
+
+importScripts("/assets/js/offline-store.js");
+
 const CACHE_NAME = "angloba-shell-v3";
 const APP_SHELL = [
   "/index.html",
@@ -86,9 +94,10 @@ self.addEventListener("push", (event) => {
       badge: "/assets/icons/icon-192.png",
       vibrate: [100, 50, 100],
       data: { url: data.url || "/" },
-    }).then(() => {
-      if ("setAppBadge" in self.navigator) self.navigator.setAppBadge(1).catch(() => {});
-    })
+    }).then(() => incrementBadgeCount())
+      .then((count) => {
+        if ("setAppBadge" in self.navigator) self.navigator.setAppBadge(count).catch(() => {});
+      })
   );
 });
 
@@ -99,6 +108,7 @@ self.addEventListener("notificationclick", (event) => {
 
   event.waitUntil(
     (async () => {
+      await resetBadgeCount();
       if ("clearAppBadge" in self.navigator) await self.navigator.clearAppBadge().catch(() => {});
 
       const allClients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });

@@ -9,7 +9,7 @@
 //                     connexion revient.
 
 const DB_NAME = "angloba-offline";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -18,6 +18,7 @@ function openDb() {
       const db = req.result;
       if (!db.objectStoreNames.contains("weeks")) db.createObjectStore("weeks", { keyPath: "number" });
       if (!db.objectStoreNames.contains("pendingSync")) db.createObjectStore("pendingSync", { keyPath: "id", autoIncrement: true });
+      if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -54,7 +55,32 @@ function getCachedWeekData(weekNumber) {
   });
 }
 
-// ---------- File d'attente de synchronisation ----------
+// ---------- Compteur de badge (icône de l'app) ----------
+// Partagé entre les pages ET le service worker (IndexedDB est accessible
+// des deux cotes). Incremente a chaque notification recue, remis a zero
+// des que l'utilisateur rouvre l'app.
+
+async function incrementBadgeCount() {
+  try {
+    return await withStore("meta", "readwrite", (store) => {
+      return new Promise((resolve) => {
+        const getReq = store.get("badgeCount");
+        getReq.onsuccess = () => {
+          const next = (getReq.result?.value || 0) + 1;
+          store.put({ key: "badgeCount", value: next });
+          resolve(next);
+        };
+        getReq.onerror = () => resolve(1);
+      });
+    });
+  } catch { return 1; }
+}
+
+async function resetBadgeCount() {
+  try {
+    await withStore("meta", "readwrite", (store) => store.put({ key: "badgeCount", value: 0 }));
+  } catch { /* ignore */ }
+}
 
 async function queuePendingAction(action) {
   // action: { url, method, body, description }

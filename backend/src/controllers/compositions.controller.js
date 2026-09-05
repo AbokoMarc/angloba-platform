@@ -7,7 +7,7 @@ import { sendJson, readJsonBody } from "../utils/http.js";
 import { newId } from "../utils/ids.js";
 import { recordActivity } from "../utils/activity.js";
 import { correctionAssist } from "../services/ai.service.js";
-import { sendPushToRole } from "../services/webpush.service.js";
+import { sendPushToRole, sendPushToUser } from "../services/webpush.service.js";
 
 const AI_AUTO_PASS_THRESHOLD = Number(process.env.AI_AUTO_PASS_THRESHOLD || 65);
 
@@ -115,11 +115,22 @@ export async function correctSubmission(req, res, params) {
   const user = requireRole(req, res, "teacher", "admin", "superadmin");
   if (!user) return;
   const body = await readJsonBody(req);
+
+  const sub = (await db.execute({
+    sql: "SELECT student_id FROM composition_submissions WHERE id = ?",
+    args: [params.id],
+  })).rows[0];
+
   await db.execute({
     sql: `UPDATE composition_submissions SET status='corrected', score=?, teacher_feedback=?, corrected_at=datetime('now'), corrected_by=?
           WHERE id=?`,
     args: [body.score, body.feedback, user.id, params.id],
   });
+
+  if (sub) {
+    sendPushToUser(sub.student_id, { title: "English Academy", body: `Ta composition a été corrigée par ton professeur — score ${body.score}/100.`, url: "/student/compositions.html" }, user.id).catch(() => {});
+  }
+
   sendJson(res, 200, { ok: true });
 }
 
@@ -153,6 +164,7 @@ export async function studentAiReview(req, res, params) {
               WHERE id=?`,
         args: [assist.suggestedScore, `[Corrige automatiquement par l'IA] ${assist.strengths} ${assist.improvements}`, sub.id],
       });
+      sendPushToUser(user.id, { title: "English Academy", body: `Ta composition a été validée par l'IA — score ${assist.suggestedScore}/100. 🎉`, url: "/student/compositions.html" }, "system").catch(() => {});
     }
 
     sendJson(res, 200, { passed, threshold: AI_AUTO_PASS_THRESHOLD, assist });

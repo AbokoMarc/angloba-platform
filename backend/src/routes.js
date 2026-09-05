@@ -13,6 +13,7 @@ import * as paymentsCtrl from "./controllers/payments.controller.js";
 import * as pushCtrl from "./controllers/push.controller.js";
 import * as eventsCtrl from "./controllers/events.controller.js";
 import * as engagementCtrl from "./controllers/engagement.controller.js";
+import * as dailyQuizCtrl from "./controllers/daily-quiz.controller.js";
 
 // Chaque route : [METHOD, regex-avec-groupes-nommes, handler]
 // params est extrait automatiquement des groupes nommes (?<id>...) etc.
@@ -31,6 +32,7 @@ export const routes = [
   ["PATCH", /^\/api\/students\/(?<id>[^/]+)$/, studentsCtrl.updateStudent],
   ["GET", /^\/api\/students\/me\/dashboard$/, studentsCtrl.myDashboard],
   ["POST", /^\/api\/students\/me\/advance-week$/, studentsCtrl.advanceMyWeek],
+  ["GET", /^\/api\/students\/leaderboard$/, studentsCtrl.leaderboard],
 
   // --- Teachers ---
   ["GET", /^\/api\/teachers$/, teachersCtrl.listTeachers],
@@ -71,6 +73,10 @@ export const routes = [
   // --- Media / audio upload ---
   ["POST", /^\/api\/media\/upload$/, mediaCtrl.uploadAudio],
   ["GET", /^\/api\/media$/, mediaCtrl.listAudio],
+  ["POST", /^\/api\/media\/images$/, mediaCtrl.uploadImage],
+  ["GET", /^\/api\/media\/images$/, mediaCtrl.listImages],
+  ["POST", /^\/api\/media\/videos$/, mediaCtrl.uploadVideo],
+  ["GET", /^\/api\/media\/videos$/, mediaCtrl.listVideos],
 
   // --- Paiements (NotchPay : Mobile Money + Visa/Mastercard) ---
   ["GET", /^\/api\/payments\/me$/, paymentsCtrl.myPayments],
@@ -84,4 +90,9 @@ export const routes = [
   ["POST", /^\/api\/events$/, eventsCtrl.createEvent],
   ["POST", /^\/api\/admin\/notify$/, engagementCtrl.notifyStudent],
   ["GET", /^\/api\/cron\/check-inactifs$/, engagementCtrl.checkInactive],
+  ["GET", /^\/api\/cron\/auto-correct-compositions$/, engagementCtrl.autoCorrectCompositions],
+
+  // --- Quiz quotidien (20 questions, difficulte croissante) ---
+  ["GET", /^\/api\/daily-quiz$/, dailyQuizCtrl.getDailyQuiz],
+  ["POST", /^\/api\/daily-quiz\/submit$/, dailyQuizCtrl.submitDailyQuiz],
 ];

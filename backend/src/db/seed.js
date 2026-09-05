@@ -18,6 +18,18 @@ import { newId } from "../utils/ids.js";
 import { MONTHS, WEEKS, GRAMMAR_HTML, VOCABULARY, EXERCISES, COMPOSITIONS, SPEAKING_SCENARIOS } from "./curriculum-data.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SEED_IMAGES = [
+  { word: "Teacher", translationFr: "Professeur", file: "teacher.png", week: 1 },
+  { word: "Student", translationFr: "Étudiant", file: "student.png", week: 1 },
+  { word: "Friend", translationFr: "Ami", file: "friend.png", week: 1 },
+  { word: "Family", translationFr: "Famille", file: "family.png", week: 4 },
+  { word: "House", translationFr: "Maison", file: "house.png", week: 6 },
+  { word: "Food", translationFr: "Nourriture", file: "food.png", week: 7 },
+  { word: "Water", translationFr: "Eau", file: "water.png", week: 7 },
+  { word: "Car", translationFr: "Voiture", file: "car.png", week: 12 },
+  { word: "Doctor", translationFr: "Médecin", file: "doctor.png", week: 15 },
+  { word: "Book", translationFr: "Livre", file: "book.png", week: 1 },
+];
 
 export async function ensureSchemaAndSeed() {
   await applySchema();
@@ -28,6 +40,8 @@ export async function ensureSchemaAndSeed() {
   await seedMissingExercises();
   await seedSpeakingScenarios();
   await seedCompositions();
+  await seedDemoAudio();
+  await seedVocabularyImages();
 }
 
 // Ajoute les colonnes/tables introduites APRES le premier lancement de la
@@ -43,6 +57,8 @@ async function runMigrations() {
     "ALTER TABLE student_profiles ADD COLUMN last_active_at TEXT",
     "ALTER TABLE payments ADD COLUMN campay_reference TEXT",
     "ALTER TABLE payments ADD COLUMN provider_reference TEXT",
+    "ALTER TABLE speaking_scenarios ADD COLUMN week_number INTEGER",
+    "ALTER TABLE appearance_settings ADD COLUMN show_leaderboard INTEGER NOT NULL DEFAULT 1",
   ];
   for (const sql of alters) {
     try {
@@ -177,12 +193,22 @@ async function seedMissingExercises() {
 
 async function seedSpeakingScenarios() {
   const existing = await db.execute({ sql: "SELECT id FROM speaking_scenarios LIMIT 1", args: [] });
-  if (existing.rows.length) return;
+  if (existing.rows.length) {
+    // Base deja seedee (avant l'ajout de week_number) : on complete le
+    // rattachement semaine par semaine sans dupliquer les scenarios.
+    for (const s of SPEAKING_SCENARIOS) {
+      await db.execute({
+        sql: "UPDATE speaking_scenarios SET week_number = ? WHERE key = ? AND week_number IS NULL",
+        args: [s.weekNumber, s.key],
+      });
+    }
+    return;
+  }
   for (const s of SPEAKING_SCENARIOS) {
     await db.execute({
-      sql: `INSERT INTO speaking_scenarios (key, title, emoji, level, ai_persona, ai_opening, goal)
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      args: [s.key, s.title, s.emoji, s.level, s.aiPersona, s.aiOpening, s.goal],
+      sql: `INSERT INTO speaking_scenarios (key, title, emoji, level, ai_persona, ai_opening, goal, week_number)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [s.key, s.title, s.emoji, s.level, s.aiPersona, s.aiOpening, s.goal, s.weekNumber],
     });
   }
   console.log(`[seed] ${SPEAKING_SCENARIOS.length} scenarios de Speaking Lab injectes.`);
@@ -201,6 +227,36 @@ async function seedCompositions() {
   console.log(`[seed] ${COMPOSITIONS.length} compositions injectees.`);
 }
 
+// Audios de demonstration (generes automatiquement, voix de synthese) pour
+// que les labs Listening/Vocabulary/Speaking ne soient jamais vides au
+// premier lancement — l'admin peut les remplacer par de vrais enregistrements
+// humains a tout moment depuis Admin > Audio Library.
+const DEMO_AUDIO = [
+  { title: "Hello (pronunciation)", category: "vocabulary", week: 1, file: "vocab-hello.mp3" },
+  { title: "Teacher (pronunciation)", category: "vocabulary", week: 1, file: "vocab-teacher.mp3" },
+  { title: "Family (pronunciation)", category: "vocabulary", week: 4, file: "vocab-family.mp3" },
+  { title: "Appointment (pronunciation)", category: "vocabulary", week: 15, file: "vocab-appointment.mp3" },
+  { title: "Recommend (pronunciation)", category: "vocabulary", week: 15, file: "vocab-recommend.mp3" },
+  { title: "Listening 1.1 - Introduction", category: "listening", week: 1, file: "listening-week1-intro.mp3" },
+  { title: "Listening 15.1 - At the Doctor", category: "listening", week: 15, file: "listening-week15-doctor.mp3" },
+  { title: "Speaking example - At the Doctor", category: "speaking_example", week: 15, file: "speaking-example-doctor.mp3" },
+];
+
+async function seedDemoAudio() {
+  const existing = await db.execute({ sql: "SELECT id FROM audio_resources LIMIT 1", args: [] });
+  if (existing.rows.length) return; // ne jamais ecraser le travail de l'admin
+
+  const publicBase = process.env.PUBLIC_API_BASE_URL || "http://localhost:4000";
+  for (const a of DEMO_AUDIO) {
+    const week = (await db.execute({ sql: "SELECT id FROM weeks WHERE number = ?", args: [a.week] })).rows[0];
+    await db.execute({
+      sql: `INSERT INTO audio_resources (id, title, category, week_id, url) VALUES (?, ?, ?, ?, ?)`,
+      args: [newId("res"), a.title, a.category, week?.id || null, `${publicBase}/seed-audio/${a.file}`],
+    });
+  }
+  console.log(`[seed] ${DEMO_AUDIO.length} audios de demonstration injectes (voix de synthese).`);
+}
+
 // Permet aussi : `npm run seed` en standalone
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { loadEnv } = await import("../utils/env.js");
@@ -209,4 +265,22 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.log("Seed termine.");
     process.exit(0);
   });
+}
+
+// Images de vocabulaire generees (cartes mot/traduction) — l'admin peut en
+// ajouter de vraies photos a tout moment depuis Admin > Image Library.
+// Le "week" definit a partir de quand l'image se debloque pour l'eleve
+// (le nombre d'images visibles augmente au fur et a mesure du programme).
+async function seedVocabularyImages() {
+  const existing = await db.execute({ sql: "SELECT id FROM media_images LIMIT 1", args: [] });
+  if (existing.rows.length) return;
+
+  const publicBase = process.env.PUBLIC_API_BASE_URL || "http://localhost:4000";
+  for (const img of SEED_IMAGES) {
+    await db.execute({
+      sql: `INSERT INTO media_images (id, word, translation_fr, image_url, week_number) VALUES (?, ?, ?, ?, ?)`,
+      args: [newId("img"), img.word, img.translationFr, `${publicBase}/seed-images/${img.file}`, img.week],
+    });
+  }
+  console.log(`[seed] ${SEED_IMAGES.length} images de vocabulaire injectees.`);
 }

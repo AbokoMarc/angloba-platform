@@ -31,6 +31,14 @@
         </div>
       </div>
 
+      <a href="/student/daily-quiz.html" class="card row-between" style="background:var(--primary);color:#fff;">
+        <div>
+          <p style="font-weight:600;font-size:14px;">📝 Quiz du jour</p>
+          <p style="font-size:11.5px;color:rgba(255,255,255,.6);">20 questions, difficulté adaptée à ton niveau</p>
+        </div>
+        ${icon("arrowRight")}
+      </a>
+
       <div class="card">
         <p style="font-weight:600;font-size:14px;margin-bottom:10px;">Quick links</p>
         <div class="grid grid-3">
@@ -42,6 +50,9 @@
           </a>
           <a href="/student/compositions.html" class="card" style="background:var(--row);text-align:center;">
             ${icon("file")}<p style="font-size:12.5px;font-weight:600;margin-top:6px;">Compositions</p>
+          </a>
+          <a href="/student/leaderboard.html" class="card" style="background:var(--row);text-align:center;">
+            🏆<p style="font-size:12.5px;font-weight:600;margin-top:6px;">Leaderboard</p>
           </a>
         </div>
       </div>
