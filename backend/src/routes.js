@@ -14,6 +14,7 @@ import * as pushCtrl from "./controllers/push.controller.js";
 import * as eventsCtrl from "./controllers/events.controller.js";
 import * as engagementCtrl from "./controllers/engagement.controller.js";
 import * as dailyQuizCtrl from "./controllers/daily-quiz.controller.js";
+import * as daysCtrl from "./controllers/days.controller.js";
 
 // Chaque route : [METHOD, regex-avec-groupes-nommes, handler]
 // params est extrait automatiquement des groupes nommes (?<id>...) etc.
@@ -95,4 +96,9 @@ export const routes = [
   // --- Quiz quotidien (20 questions, difficulte croissante) ---
   ["GET", /^\/api\/daily-quiz$/, dailyQuizCtrl.getDailyQuiz],
   ["POST", /^\/api\/daily-quiz\/submit$/, dailyQuizCtrl.submitDailyQuiz],
+
+  // --- Parcours journalier (Day 1..180) ---
+  ["GET", /^\/api\/students\/me\/today$/, daysCtrl.getToday],
+  ["POST", /^\/api\/students\/me\/today\/submit-exercises$/, daysCtrl.submitTodayExercises],
+  ["POST", /^\/api\/students\/me\/advance-day$/, daysCtrl.advanceDay],
 ];

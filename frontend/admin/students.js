@@ -58,8 +58,8 @@ function draw(filter = "") {
       </td>
       <td>
         <div class="row" style="gap:4px;">
-          M<input type="number" class="week-input" data-id="${s.id}" data-field="currentMonth" value="${s.current_month}" min="1" max="9" style="width:42px;padding:4px 4px;font-size:12px;" />
-          W<input type="number" class="week-input" data-id="${s.id}" data-field="currentWeek" value="${s.current_week}" min="1" max="36" style="width:48px;padding:4px 4px;font-size:12px;" />
+          Day <input type="number" class="day-input" data-id="${s.id}" value="${s.current_day || 1}" min="1" max="180" style="width:56px;padding:4px 4px;font-size:12px;" />
+          <span style="font-size:10.5px;color:var(--text-muted);">(W${s.current_week})</span>
         </div>
       </td>
       <td>
@@ -76,9 +76,12 @@ function draw(filter = "") {
       </td>
     </tr>`).join("") : `<tr><td colspan="8" class="empty-state">Aucun élève.</td></tr>`;
 
-  tbody.querySelectorAll(".week-input").forEach((input) => {
+  tbody.querySelectorAll(".day-input").forEach((input) => {
     input.addEventListener("change", async () => {
-      await api.patch(`/students/${input.dataset.id}`, { [input.dataset.field]: Number(input.value) });
+      await api.patch(`/students/${input.dataset.id}`, { currentDay: Number(input.value) });
+      const { students } = await api.get("/students");
+      allStudents = students;
+      draw(document.getElementById("search-input").value);
     });
   });
 

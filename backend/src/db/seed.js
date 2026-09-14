@@ -59,6 +59,7 @@ async function runMigrations() {
     "ALTER TABLE payments ADD COLUMN provider_reference TEXT",
     "ALTER TABLE speaking_scenarios ADD COLUMN week_number INTEGER",
     "ALTER TABLE appearance_settings ADD COLUMN show_leaderboard INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE student_profiles ADD COLUMN current_day INTEGER NOT NULL DEFAULT 1",
   ];
   for (const sql of alters) {
     try {
@@ -78,6 +79,17 @@ async function runMigrations() {
     SET trial_ends_at = datetime('now', '+7 days')
     WHERE trial_ends_at IS NULL
   `);
+
+  // Retro-compatibilite : les eleves deja inscrits AVANT le passage au
+  // parcours journalier avaient uniquement current_week. On leur calcule un
+  // current_day equivalent (Day 1 de leur semaine actuelle) au lieu de les
+  // faire redemarrer a Day 1 du programme entier.
+  await db.execute(`
+    UPDATE student_profiles
+    SET current_day = (current_week - 1) * 5 + 1
+    WHERE current_day = 1 AND current_week > 1
+  `);
+
   console.log("[migrate] Migrations appliquees.");
 }
 

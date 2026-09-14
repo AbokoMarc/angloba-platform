@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS student_profiles (
   course_name  TEXT DEFAULT 'English B1',
   current_month INTEGER NOT NULL DEFAULT 1,
   current_week  INTEGER NOT NULL DEFAULT 1,
+  current_day   INTEGER NOT NULL DEFAULT 1,   -- unite de progression reelle : 1..180 (36 semaines x 5 jours)
   streak_days   INTEGER NOT NULL DEFAULT 0,
   overall_pct   INTEGER NOT NULL DEFAULT 0,
   subscription_status   TEXT NOT NULL DEFAULT 'trial' CHECK (subscription_status IN ('trial','active','expired')),
@@ -188,7 +189,7 @@ CREATE TABLE IF NOT EXISTS appearance_settings (
   theme_primary  TEXT NOT NULL DEFAULT '#0F2544',
   theme_accent   TEXT NOT NULL DEFAULT '#E8834A',
   show_leaderboard INTEGER NOT NULL DEFAULT 1,
-  nav_items_json TEXT NOT NULL DEFAULT '[{"key":"dashboard","label":"Dashboard","icon":"grid"},{"key":"journey","label":"My Journey","icon":"compass"},{"key":"lesson","label":"Current Lesson","icon":"book"},{"key":"speaking","label":"Speaking Lab","icon":"mic"},{"key":"vocabulary","label":"Vocabulary","icon":"bookmark"},{"key":"compositions","label":"Compositions","icon":"file"},{"key":"progress","label":"My Progress","icon":"chart"}]'
+  nav_items_json TEXT NOT NULL DEFAULT '[{"key":"dashboard","label":"Dashboard","icon":"grid"},{"key":"journey","label":"My Journey","icon":"compass"},{"key":"lesson","label":"Today","icon":"book"},{"key":"speaking","label":"Speaking Lab","icon":"mic"},{"key":"vocabulary","label":"Vocabulary","icon":"bookmark"},{"key":"compositions","label":"Compositions","icon":"file"},{"key":"progress","label":"My Progress","icon":"chart"}]'
 );
 
 CREATE INDEX IF NOT EXISTS idx_weeks_month ON weeks(month_id);

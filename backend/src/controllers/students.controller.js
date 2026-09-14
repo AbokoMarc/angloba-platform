@@ -17,7 +17,7 @@ const SPEAKING_PASS_THRESHOLD = Number(process.env.SPEAKING_PASS_THRESHOLD || 70
 
 const STUDENT_SELECT = `
   SELECT u.id, u.name, u.email, u.status,
-         sp.teacher_id, sp.course_name, sp.current_month, sp.current_week, sp.overall_pct,
+         sp.teacher_id, sp.course_name, sp.current_month, sp.current_week, sp.current_day, sp.overall_pct,
          sp.subscription_status, sp.trial_ends_at, sp.subscription_expires_at,
          t.name as teacher_name
   FROM users u
@@ -70,6 +70,18 @@ export async function updateStudent(req, res, params) {
   if (body.courseName !== undefined) { fields.push("course_name = ?"); args.push(body.courseName); }
   if (body.currentMonth !== undefined) { fields.push("current_month = ?"); args.push(body.currentMonth); }
   if (body.currentWeek !== undefined) { fields.push("current_week = ?"); args.push(body.currentWeek); }
+
+  // L'admin peut aussi fixer directement le JOUR (1..180) — recalcule
+  // automatiquement semaine/mois en synchro pour le classement et les
+  // anciens outils qui raisonnent encore en semaines.
+  if (body.currentDay !== undefined) {
+    const clampedDay = Math.max(1, Math.min(180, Number(body.currentDay)));
+    const derivedWeek = Math.min(36, Math.ceil(clampedDay / 5));
+    const derivedMonth = Math.min(9, Math.ceil(derivedWeek / 4));
+    fields.push("current_day = ?"); args.push(clampedDay);
+    fields.push("current_week = ?"); args.push(derivedWeek);
+    fields.push("current_month = ?"); args.push(derivedMonth);
+  }
 
   // L'admin peut debloquer manuellement l'abonnement d'un eleve (ex: paiement
   // recu hors plateforme, geste commercial...) — sans passer par NotchPay.
@@ -125,10 +137,10 @@ export async function leaderboard(req, res) {
   }
 
   const rows = (await db.execute({
-    sql: `SELECT u.id, u.name, sp.current_week, sp.current_month, sp.overall_pct, sp.streak_days
+    sql: `SELECT u.id, u.name, sp.current_day, sp.current_week, sp.current_month, sp.overall_pct, sp.streak_days
           FROM student_profiles sp JOIN users u ON u.id = sp.user_id
           WHERE u.status = 'active'
-          ORDER BY sp.current_week DESC, sp.overall_pct DESC
+          ORDER BY sp.current_day DESC, sp.overall_pct DESC
           LIMIT 50`,
     args: [],
   })).rows;
