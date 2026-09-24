@@ -1,0 +1,304 @@
+// backend/src/db/seed.js
+//
+// 1) Applique le schema (idempotent : CREATE TABLE IF NOT EXISTS)
+// 2) Cree le compte SUPER ADMIN au tout premier demarrage, a partir des
+//    variables d'environnement SUPERADMIN_* (jamais en dur dans le code).
+//    Ce compte est superadmin ET a un profil professeur (il herite des
+//    droits d'un prof sur SES propres eleves, en plus de tout controler).
+// 3) Injecte le programme (9 mois / 36 semaines) + scenarios de speaking
+//    + compositions, SEULEMENT si la base est vide (ne jamais ecraser
+//    le travail de l'admin sur les redemarrages suivants).
+
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { db } from "./client.js";
+import { hashPassword } from "../utils/password.js";
+import { newId } from "../utils/ids.js";
+import { MONTHS, WEEKS, GRAMMAR_HTML, VOCABULARY, EXERCISES, COMPOSITIONS, SPEAKING_SCENARIOS } from "./curriculum-data.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SEED_IMAGES = [
+  { word: "Teacher", translationFr: "Professeur", file: "teacher.png", week: 1 },
+  { word: "Student", translationFr: "Étudiant", file: "student.png", week: 1 },
+  { word: "Friend", translationFr: "Ami", file: "friend.png", week: 1 },
+  { word: "Family", translationFr: "Famille", file: "family.png", week: 4 },
+  { word: "House", translationFr: "Maison", file: "house.png", week: 6 },
+  { word: "Food", translationFr: "Nourriture", file: "food.png", week: 7 },
+  { word: "Water", translationFr: "Eau", file: "water.png", week: 7 },
+  { word: "Car", translationFr: "Voiture", file: "car.png", week: 12 },
+  { word: "Doctor", translationFr: "Médecin", file: "doctor.png", week: 15 },
+  { word: "Book", translationFr: "Livre", file: "book.png", week: 1 },
+];
+
+export async function ensureSchemaAndSeed() {
+  await applySchema();
+  await runMigrations();
+  await seedAppearance();
+  await seedSuperAdmin();
+  await seedCurriculum();
+  await seedMissingExercises();
+  await seedSpeakingScenarios();
+  await seedCompositions();
+  await seedDemoAudio();
+  await seedVocabularyImages();
+}
+
+// Ajoute les colonnes/tables introduites APRES le premier lancement de la
+// plateforme, sans jamais toucher aux donnees existantes. Chaque ALTER TABLE
+// est tente individuellement : si la colonne existe deja (mise a jour reappliquee,
+// ou base fraiche ou schema.sql l'a deja creee), l'erreur "duplicate column"
+// est simplement ignoree.
+async function runMigrations() {
+  const alters = [
+    "ALTER TABLE student_profiles ADD COLUMN subscription_status TEXT NOT NULL DEFAULT 'trial'",
+    "ALTER TABLE student_profiles ADD COLUMN trial_ends_at TEXT",
+    "ALTER TABLE student_profiles ADD COLUMN subscription_expires_at TEXT",
+    "ALTER TABLE student_profiles ADD COLUMN last_active_at TEXT",
+    "ALTER TABLE payments ADD COLUMN campay_reference TEXT",
+    "ALTER TABLE payments ADD COLUMN provider_reference TEXT",
+    "ALTER TABLE speaking_scenarios ADD COLUMN week_number INTEGER",
+    "ALTER TABLE appearance_settings ADD COLUMN show_leaderboard INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE student_profiles ADD COLUMN current_day INTEGER NOT NULL DEFAULT 1",
+  ];
+  for (const sql of alters) {
+    try {
+      await db.execute(sql);
+    } catch (err) {
+      if (!/duplicate column/i.test(err.message)) {
+        console.warn(`[migrate] ${sql} -> ${err.message}`);
+      }
+    }
+  }
+
+  // Les eleves deja inscrits AVANT l'introduction de l'essai gratuit ne
+  // doivent pas se retrouver bloques du jour au lendemain : on leur donne
+  // un essai qui demarre "maintenant" s'ils n'en ont pas deja un.
+  await db.execute(`
+    UPDATE student_profiles
+    SET trial_ends_at = datetime('now', '+7 days')
+    WHERE trial_ends_at IS NULL
+  `);
+
+  // Retro-compatibilite : les eleves deja inscrits AVANT le passage au
+  // parcours journalier avaient uniquement current_week. On leur calcule un
+  // current_day equivalent (Day 1 de leur semaine actuelle) au lieu de les
+  // faire redemarrer a Day 1 du programme entier.
+  await db.execute(`
+    UPDATE student_profiles
+    SET current_day = (current_week - 1) * 5 + 1
+    WHERE current_day = 1 AND current_week > 1
+  `);
+
+  console.log("[migrate] Migrations appliquees.");
+}
+
+async function applySchema() {
+  const sql = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
+  const statements = sql.split(";").map((s) => s.trim()).filter(Boolean);
+  for (const stmt of statements) {
+    await db.execute(stmt);
+  }
+  console.log("[seed] Schema OK.");
+}
+
+async function seedAppearance() {
+  const existing = await db.execute({ sql: "SELECT id FROM appearance_settings WHERE id = 1", args: [] });
+  if (existing.rows.length) return;
+  await db.execute({ sql: "INSERT INTO appearance_settings (id) VALUES (1)", args: [] });
+  console.log("[seed] Reglages d'apparence par defaut crees.");
+}
+
+async function seedSuperAdmin() {
+  const email = (process.env.SUPERADMIN_EMAIL || "").toLowerCase().trim();
+  if (!email) {
+    console.warn("[seed] SUPERADMIN_EMAIL absent du .env — aucun super admin cree. Ajoute-le puis redemarre.");
+    return;
+  }
+  const existing = await db.execute({ sql: "SELECT id FROM users WHERE email = ?", args: [email] });
+  if (existing.rows.length) return; // deja cree lors d'un demarrage precedent
+
+  const name = process.env.SUPERADMIN_NAME || "Super Admin";
+  const password = process.env.SUPERADMIN_PASSWORD;
+  if (!password) {
+    console.warn("[seed] SUPERADMIN_PASSWORD absent du .env — aucun super admin cree.");
+    return;
+  }
+
+  const { hash, salt } = hashPassword(password);
+  const id = newId("usr");
+  await db.execute({
+    sql: `INSERT INTO users (id, role, name, email, password_hash, password_salt, status)
+          VALUES (?, 'superadmin', ?, ?, ?, ?, 'active')`,
+    args: [id, name, email, hash, salt],
+  });
+  await db.execute({
+    sql: "INSERT INTO teacher_profiles (user_id, subject) VALUES (?, 'English')",
+    args: [id],
+  });
+  console.log(`[seed] Super admin cree : ${email} (aussi visible comme professeur titulaire).`);
+}
+
+async function seedCurriculum() {
+  const existing = await db.execute({ sql: "SELECT id FROM months LIMIT 1", args: [] });
+  if (existing.rows.length) return; // deja seede
+
+  const monthIdByNumber = {};
+  for (const m of MONTHS) {
+    const result = await db.execute({
+      sql: "INSERT INTO months (number, title, objective) VALUES (?, ?, ?) RETURNING id",
+      args: [m.number, m.title, m.objective],
+    });
+    monthIdByNumber[m.number] = result.rows[0].id;
+  }
+
+  for (const w of WEEKS) {
+    const grammarHtml = GRAMMAR_HTML[w.number] || `<p>Contenu a completer par l'admin pour la semaine ${w.number} (${w.title}).</p>`;
+    const result = await db.execute({
+      sql: `INSERT INTO weeks (month_id, number, title, grammar_title, grammar_html, speaking_task, is_test_week)
+            VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+      args: [monthIdByNumber[w.month], w.number, w.title, w.grammarTitle, grammarHtml, w.speakingTask, w.isTest ? 1 : 0],
+    });
+    const weekId = result.rows[0].id;
+
+    for (const v of VOCABULARY[w.number] || []) {
+      await db.execute({
+        sql: `INSERT INTO vocabulary_words (id, week_id, word, word_type, fr, gb_variant, us_variant)
+              VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        args: [newId("voc"), weekId, v.word, v.wordType, v.fr, v.gb || null, v.us || null],
+      });
+    }
+
+    for (const ex of EXERCISES[w.number] || []) {
+      await db.execute({
+        sql: `INSERT INTO exercises (id, week_id, question, options_json, correct_index) VALUES (?, ?, ?, ?, ?)`,
+        args: [newId("exo"), weekId, ex.question, JSON.stringify(ex.options), ex.correctIndex],
+      });
+    }
+  }
+  console.log(`[seed] Programme injecte : ${MONTHS.length} mois, ${WEEKS.length} semaines.`);
+}
+
+// Ajoute les exercices des semaines introduites APRES le seed initial, sans
+// jamais toucher aux semaines qui en ont deja (evite les doublons a chaque
+// redemarrage, et fonctionne aussi bien sur une base fraiche que sur Turso
+// deja en production).
+async function seedMissingExercises() {
+  let added = 0;
+  for (const [weekNumber, exerciseList] of Object.entries(EXERCISES)) {
+    const week = (await db.execute({ sql: "SELECT id FROM weeks WHERE number = ?", args: [Number(weekNumber)] })).rows[0];
+    if (!week) continue;
+
+    // On complete TOUJOURS avec les questions manquantes (comparaison par
+    // texte exact) plutot que de sauter la semaine des qu'elle a UNE seule
+    // question — sinon un enrichissement de contenu comme celui-ci ne
+    // s'appliquerait jamais aux semaines deja partiellement seedees.
+    const existingQuestions = new Set(
+      (await db.execute({ sql: "SELECT question FROM exercises WHERE week_id = ?", args: [week.id] })).rows.map((r) => r.question)
+    );
+
+    for (const ex of exerciseList) {
+      if (existingQuestions.has(ex.question)) continue;
+      await db.execute({
+        sql: `INSERT INTO exercises (id, week_id, question, options_json, correct_index) VALUES (?, ?, ?, ?, ?)`,
+        args: [newId("exo"), week.id, ex.question, JSON.stringify(ex.options), ex.correctIndex],
+      });
+      added++;
+    }
+  }
+  if (added) console.log(`[seed] ${added} nouveaux exercices ajoutes (semaines completees, sans doublons).`);
+}
+
+async function seedSpeakingScenarios() {
+  const existing = await db.execute({ sql: "SELECT id FROM speaking_scenarios LIMIT 1", args: [] });
+  if (existing.rows.length) {
+    // Base deja seedee (avant l'ajout de week_number) : on complete le
+    // rattachement semaine par semaine sans dupliquer les scenarios.
+    for (const s of SPEAKING_SCENARIOS) {
+      await db.execute({
+        sql: "UPDATE speaking_scenarios SET week_number = ? WHERE key = ? AND week_number IS NULL",
+        args: [s.weekNumber, s.key],
+      });
+    }
+    return;
+  }
+  for (const s of SPEAKING_SCENARIOS) {
+    await db.execute({
+      sql: `INSERT INTO speaking_scenarios (key, title, emoji, level, ai_persona, ai_opening, goal, week_number)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [s.key, s.title, s.emoji, s.level, s.aiPersona, s.aiOpening, s.goal, s.weekNumber],
+    });
+  }
+  console.log(`[seed] ${SPEAKING_SCENARIOS.length} scenarios de Speaking Lab injectes.`);
+}
+
+async function seedCompositions() {
+  const existing = await db.execute({ sql: "SELECT id FROM compositions LIMIT 1", args: [] });
+  if (existing.rows.length) return;
+  for (const c of COMPOSITIONS) {
+    const week = await db.execute({ sql: "SELECT id FROM weeks WHERE number = ?", args: [c.week] });
+    await db.execute({
+      sql: `INSERT INTO compositions (number, week_id, title, prompt, min_words) VALUES (?, ?, ?, ?, ?)`,
+      args: [c.number, week.rows[0]?.id || null, c.title, c.prompt, c.minWords],
+    });
+  }
+  console.log(`[seed] ${COMPOSITIONS.length} compositions injectees.`);
+}
+
+// Audios de demonstration (generes automatiquement, voix de synthese) pour
+// que les labs Listening/Vocabulary/Speaking ne soient jamais vides au
+// premier lancement — l'admin peut les remplacer par de vrais enregistrements
+// humains a tout moment depuis Admin > Audio Library.
+const DEMO_AUDIO = [
+  { title: "Hello (pronunciation)", category: "vocabulary", week: 1, file: "vocab-hello.mp3" },
+  { title: "Teacher (pronunciation)", category: "vocabulary", week: 1, file: "vocab-teacher.mp3" },
+  { title: "Family (pronunciation)", category: "vocabulary", week: 4, file: "vocab-family.mp3" },
+  { title: "Appointment (pronunciation)", category: "vocabulary", week: 15, file: "vocab-appointment.mp3" },
+  { title: "Recommend (pronunciation)", category: "vocabulary", week: 15, file: "vocab-recommend.mp3" },
+  { title: "Listening 1.1 - Introduction", category: "listening", week: 1, file: "listening-week1-intro.mp3" },
+  { title: "Listening 15.1 - At the Doctor", category: "listening", week: 15, file: "listening-week15-doctor.mp3" },
+  { title: "Speaking example - At the Doctor", category: "speaking_example", week: 15, file: "speaking-example-doctor.mp3" },
+];
+
+async function seedDemoAudio() {
+  const existing = await db.execute({ sql: "SELECT id FROM audio_resources LIMIT 1", args: [] });
+  if (existing.rows.length) return; // ne jamais ecraser le travail de l'admin
+
+  const publicBase = process.env.PUBLIC_API_BASE_URL || "http://localhost:4000";
+  for (const a of DEMO_AUDIO) {
+    const week = (await db.execute({ sql: "SELECT id FROM weeks WHERE number = ?", args: [a.week] })).rows[0];
+    await db.execute({
+      sql: `INSERT INTO audio_resources (id, title, category, week_id, url) VALUES (?, ?, ?, ?, ?)`,
+      args: [newId("res"), a.title, a.category, week?.id || null, `${publicBase}/seed-audio/${a.file}`],
+    });
+  }
+  console.log(`[seed] ${DEMO_AUDIO.length} audios de demonstration injectes (voix de synthese).`);
+}
+
+// Permet aussi : `npm run seed` en standalone
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const { loadEnv } = await import("../utils/env.js");
+  loadEnv();
+  ensureSchemaAndSeed().then(() => {
+    console.log("Seed termine.");
+    process.exit(0);
+  });
+}
+
+// Images de vocabulaire generees (cartes mot/traduction) — l'admin peut en
+// ajouter de vraies photos a tout moment depuis Admin > Image Library.
+// Le "week" definit a partir de quand l'image se debloque pour l'eleve
+// (le nombre d'images visibles augmente au fur et a mesure du programme).
+async function seedVocabularyImages() {
+  const existing = await db.execute({ sql: "SELECT id FROM media_images LIMIT 1", args: [] });
+  if (existing.rows.length) return;
+
+  const publicBase = process.env.PUBLIC_API_BASE_URL || "http://localhost:4000";
+  for (const img of SEED_IMAGES) {
+    await db.execute({
+      sql: `INSERT INTO media_images (id, word, translation_fr, image_url, week_number) VALUES (?, ?, ?, ?, ?)`,
+      args: [newId("img"), img.word, img.translationFr, `${publicBase}/seed-images/${img.file}`, img.week],
+    });
+  }
+  console.log(`[seed] ${SEED_IMAGES.length} images de vocabulaire injectees.`);
+}
