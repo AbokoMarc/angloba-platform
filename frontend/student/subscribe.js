@@ -1,7 +1,7 @@
 // frontend/student/subscribe.js
 
 (async () => {
-  const ctx = await renderShell({ roles: ["student"], activeKey: "dashboard", title: "Subscription", subtitle: "Ton abonnement English Academy" });
+  const ctx = await renderShell({ roles: ["student"], activeKey: "more", title: "Subscription", subtitle: "Ton abonnement English Academy" });
   if (!ctx) return;
 
   const root = document.getElementById("subscribe-root");

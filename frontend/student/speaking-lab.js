@@ -20,51 +20,99 @@ let activeScenario = null;
 let history = []; // [{from:'ai'|'user', text}]
 let recognizing = false;
 let recognition = null;
-let studentLevel = "Beginner";
+let levelName = "Beginner";
+let studentProfile = null;
+let pastSessions = [];
+let typeMode = false;
 
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
 const speechSupported = Boolean(SpeechRecognitionAPI);
+const TURN_GOAL = 5;
+
+// Phrases d'aide cliquables pour les timides (sans micro, sans risque de rater la prononciation).
+const HELP_CHIPS = {
+  doctor: ["I have a sore throat", "I feel dizzy", "It's been 2 days"],
+  restaurant: ["A table for two, please", "I would like a chicken", "The bill, please"],
+  hotel: ["I have a reservation", "A room for two nights", "What time is breakfast?"],
+  job: ["I have two years of experience", "I am a hard worker", "Thank you for your time"],
+};
+const GENERIC_CHIPS = ["Can you repeat, please?", "Sorry, I don't understand", "Can you speak slower?"];
+
+function chipsFor(scn) {
+  const k = `${scn.key} ${scn.title}`.toLowerCase();
+  const hit = Object.keys(HELP_CHIPS).find((h) => k.includes(h));
+  return [...(hit ? HELP_CHIPS[hit] : []), ...GENERIC_CHIPS].slice(0, 5);
+}
 
 (async () => {
-  const ctx = await renderShell({ roles: ["student"], activeKey: "speaking", title: "Speaking Lab", subtitle: "Practice real-life conversations" });
+  const ctx = await renderShell({ roles: ["student"], activeKey: "speaking", title: "Speaking Lab" });
   if (!ctx) return;
 
   try {
-    const [{ scenarios: list }, { profile }] = await Promise.all([
+    const [{ scenarios: list }, { profile }, hist] = await Promise.all([
       api.get("/courses/speaking-scenarios"),
       api.get("/students/me/dashboard"),
+      api.get("/speaking/history").catch(() => ({ sessions: [] })),
     ]);
     scenarios = list;
-    studentLevel = inferLevelFromMonth(profile?.current_month || 1);
+    studentProfile = profile;
+    pastSessions = hist.sessions || [];
+    levelName = studentLevel(profile);
     renderScenarioGrid();
   } catch (err) {
     if (handlePaywallError(err)) return;
-    document.getElementById("speaking-root").innerHTML = `<div class="empty-state">${err.message}</div>`;
+    document.getElementById("speaking-root").innerHTML = `<div class="empty-state">${esc(err.message)}</div>`;
   }
 })();
 
-function inferLevelFromMonth(month) {
-  if (month <= 3) return "Beginner";
-  if (month <= 6) return "Intermediate";
-  return "Advanced";
+function sessionsFor(scn) {
+  return pastSessions.filter((s) => s.title === scn.title);
 }
 
 function renderScenarioGrid() {
   const root = document.getElementById("speaking-root");
+  const sub = document.querySelector("#shell-topbar .sub");
+  if (!sub) document.querySelector("#shell-topbar > div").insertAdjacentHTML("beforeend", `<p class="sub" style="flex-basis:100%;font-weight:600;font-size:15px;color:var(--text-muted);margin-top:4px;">Practice real conversations with AI</p>`);
+
+  const featured = scenarios.find((s) => !sessionsFor(s).length) || scenarios[0];
+
   root.innerHTML = `
-    ${!speechSupported ? `<div class="card" style="background:var(--danger-bg);color:var(--danger);font-size:12.5px;">${icon("alert")} Ton navigateur ne supporte pas la reconnaissance vocale automatique — tu pourras taper tes réponses à la place.</div>` : ""}
-    <p style="font-size:13px;color:var(--text-muted);">Choose a scenario to begin. Your level: <b>${studentLevel}</b></p>
-    <div class="grid grid-3" id="scenario-grid"></div>
+    ${!speechSupported ? `<div class="bar-link danger">${icon("alert")}<span style="flex:1;font-size:13px;">Ton navigateur ne gère pas la reconnaissance vocale — tu pourras taper ou choisir tes réponses.</span></div>` : ""}
+    <div class="pill-row" style="justify-content:center;">
+      <span class="pill pill-green" style="font-size:14px;padding:8px 14px;">${icon("shield")} ${levelName}</span>
+      <span class="pill pill-orange" style="font-size:14px;padding:8px 14px;">${icon("flame")} XP ${studentXp(studentProfile)}</span>
+    </div>
+    <div class="scn-grid" id="scenario-grid"></div>
+    ${featured ? `
+      <h2 class="sec-title">Featured conversation</h2>
+      <button class="card scenario-card" data-key="${esc(featured.key)}" style="display:flex;gap:14px;align-items:center;text-align:left;background:var(--orange-soft);border:2px solid #F3CFA5;">
+        <span class="avatar-emoji lg" style="width:76px;height:76px;font-size:40px;">${esc(featured.emoji)}</span>
+        <span style="flex:1;min-width:0;">
+          <b style="display:block;font-size:19px;color:var(--brand);">${esc(featured.title)}</b>
+          <span style="font-size:13px;color:#6B3300;font-weight:600;">With ${esc(featured.ai_persona)}</span>
+        </span>
+        <span class="btn btn-cta btn-sm">Start</span>
+      </button>` : ""}
   `;
+
   const grid = document.getElementById("scenario-grid");
-  grid.innerHTML = scenarios.map((s) => `
-    <button class="card scenario-card" data-key="${s.key}" style="text-align:left;">
-      <p style="font-size:24px;">${s.emoji}</p>
-      <p style="font-weight:600;font-size:13.5px;margin-top:6px;">${s.title}</p>
-      <span class="badge badge-accent" style="margin-top:6px;">${s.level}</span>
-    </button>
-  `).join("");
-  grid.querySelectorAll(".scenario-card").forEach((btn) => {
+  grid.innerHTML = scenarios.map((s) => {
+    const done = sessionsFor(s);
+    const best = done.length ? Math.max(...done.map((x) => x.scores?.overall || 0)) : 0;
+    return `
+    <button class="scn scenario-card" data-key="${esc(s.key)}">
+      ${done.length ? "" : ""}
+      <span class="scn-av">${esc(s.emoji)}</span>
+      <h3>${esc(s.title)}</h3>
+      <span class="meta"><span>${icon("star")} ${esc(s.level)}</span></span>
+      ${done.length ? `
+        <span class="mini">${done.length} session${done.length > 1 ? "s" : ""} · best ${best}%
+          <span class="progress-bar" style="height:6px;margin-top:4px;display:block;"><span style="width:${Math.min(best, 100)}%;background:var(--green-2);"></span></span></span>` : ""}
+      <span class="go">${done.length ? "Practice again" : "Try now"}</span>
+    </button>`;
+  }).join("");
+
+  root.querySelectorAll(".scenario-card").forEach((btn) => {
     btn.addEventListener("click", () => startScenario(btn.dataset.key));
   });
 }
@@ -72,68 +120,120 @@ function renderScenarioGrid() {
 function startScenario(key) {
   activeScenario = scenarios.find((s) => s.key === key);
   history = [{ from: "ai", text: activeScenario.ai_opening }];
+  typeMode = !speechSupported;
   renderConversation();
   speak(activeScenario.ai_opening);
 }
 
+function personaName() {
+  return (activeScenario.ai_persona || "").split(",")[0].replace(/^(a|an|the)\s+/i, "").trim() || "AI partner";
+}
+
 function renderConversation() {
   const root = document.getElementById("speaking-root");
+  document.getElementById("shell-topbar").style.display = "none";
   root.innerHTML = `
-    <button class="btn btn-outline btn-sm" id="back-btn" style="width:fit-content;">${icon("arrowRight")} New scenario</button>
-    <div class="card" style="padding:0;overflow:hidden;">
-      <div class="row" style="background:var(--primary);color:#fff;padding:10px 16px;font-size:12.5px;">
-        <span style="width:7px;height:7px;border-radius:999px;background:#4ADE80;"></span>
-        AI is playing: ${activeScenario.ai_persona}
+    <div class="chat-shell">
+      <div class="chat-head">
+        <button class="round-btn" id="back-btn" aria-label="Back">${icon("chevronLeft")}</button>
+        <h1 style="font-size:24px;font-weight:800;color:var(--brand);flex:1;min-width:0;">${esc(activeScenario.title)}</h1>
+        <span class="avatar-emoji md">${esc(activeScenario.emoji)}</span>
       </div>
+      <div class="card row-between" style="padding:12px 14px;">
+        <span class="row" style="gap:10px;min-width:0;">
+          <span class="avatar-emoji sm">${esc(activeScenario.emoji)}</span>
+          <span style="font-size:13px;font-weight:700;color:#3F5A4F;line-height:1.25;min-width:0;">${esc(personaName())} · AI Speaking Partner</span>
+        </span>
+        <span class="pill pill-green" id="xp-pill">${icon("bolt")} XP +0</span>
+      </div>
+      <div class="q-progress"><span id="turn-pct">0%</span><div class="progress-bar"><span id="turn-bar" style="width:0%;"></span></div><span id="turn-count">0/${TURN_GOAL} turns</span></div>
+
       <div class="chat-window" id="chat-window"></div>
-      <div style="padding:16px;border-top:1px solid var(--border);background:var(--row);">
-        <div id="voice-controls" style="text-align:center;"></div>
-        <div id="text-fallback" style="display:none;gap:8px;" class="row"></div>
-        <p id="status-line" style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:10px;"></p>
-      </div>
+
+      <div class="voice-panel" id="voice-panel"></div>
+      <button class="btn btn-primary btn-block" id="finish-btn">Finish & get my score</button>
     </div>
-    <button class="btn btn-outline btn-block" id="finish-btn">Finish & get my score</button>
   `;
 
-  document.getElementById("back-btn").addEventListener("click", () => { activeScenario = null; renderScenarioGrid(); });
+  document.getElementById("back-btn").addEventListener("click", leaveConversation);
   document.getElementById("finish-btn").addEventListener("click", finishSession);
 
   renderChatMessages();
-  setupInputControls();
+  renderVoicePanel();
 }
 
-function renderChatMessages() {
+function leaveConversation() {
+  if (recognizing && recognition) { try { recognition.stop(); } catch {} }
+  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  document.getElementById("shell-topbar").style.display = "";
+  activeScenario = null;
+  renderScenarioGrid();
+}
+
+function userTurns() { return history.filter((m) => m.from === "user").length; }
+
+function updateTurnProgress() {
+  const n = userTurns();
+  const pct = Math.min(100, Math.round((n / TURN_GOAL) * 100));
+  const set = (id, fn) => { const el = document.getElementById(id); if (el) fn(el); };
+  set("turn-pct", (el) => (el.textContent = `${pct}%`));
+  set("turn-bar", (el) => (el.style.width = `${pct}%`));
+  set("turn-count", (el) => (el.textContent = `${Math.min(n, TURN_GOAL)}/${TURN_GOAL} turns`));
+  set("xp-pill", (el) => (el.innerHTML = `${icon("bolt")} XP +${n * 5}`));
+}
+
+function renderChatMessages(extra = "") {
   const chatWindow = document.getElementById("chat-window");
-  chatWindow.innerHTML = history.map((m) => `<div class="chat-bubble ${m.from}">${escapeHtml(m.text)}</div>`).join("");
-  chatWindow.scrollTop = chatWindow.scrollHeight;
+  chatWindow.innerHTML = history.map((m) => m.from === "ai"
+    ? `<div class="msg ai"><span class="avatar-emoji sm">${esc(activeScenario.emoji)}</span><div class="chat-bubble ai">${esc(m.text)}</div></div>`
+    : `<div class="msg user"><div class="chat-bubble user">${esc(m.text)}</div></div>`).join("") + extra;
+  chatWindow.lastElementChild?.scrollIntoView({ block: "end", behavior: "smooth" });
+  updateTurnProgress();
 }
 
-function setupInputControls() {
-  const voiceControls = document.getElementById("voice-controls");
-  const textFallback = document.getElementById("text-fallback");
-  const statusLine = document.getElementById("status-line");
+function renderVoicePanel(status) {
+  const panel = document.getElementById("voice-panel");
+  if (!panel) return;
+  const chips = chipsFor(activeScenario);
+  const defaultStatus = typeMode ? "Type or tap a phrase below." : "Tap the mic and speak your answer.";
 
-  if (speechSupported) {
-    voiceControls.style.display = "block";
-    textFallback.style.display = "none";
-    voiceControls.innerHTML = `<button class="mic-btn" id="mic-btn">${icon("mic")}</button>`;
-    statusLine.textContent = "Tap the mic and speak your answer clearly.";
-    document.getElementById("mic-btn").addEventListener("click", toggleRecording);
-  } else {
-    voiceControls.style.display = "none";
-    textFallback.style.display = "flex";
-    textFallback.innerHTML = `
-      <input type="text" id="text-input" placeholder="Type your answer..." style="flex:1;" />
-      <button class="btn btn-accent" id="send-text-btn">Send</button>
-    `;
-    document.getElementById("send-text-btn").addEventListener("click", () => {
-      const input = document.getElementById("text-input");
-      if (input.value.trim()) { submitStudentTurn(input.value.trim()); input.value = ""; }
-    });
-    document.getElementById("text-input").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") document.getElementById("send-text-btn").click();
-    });
+  panel.innerHTML = `
+    <p class="voice-status" id="status-line">${status || defaultStatus}</p>
+    ${typeMode ? `
+      <div class="row" style="gap:8px;margin:8px 0 12px;">
+        <input type="text" id="text-input" placeholder="Type your answer..." style="flex:1;min-height:50px;border-radius:14px;font-size:16px;" />
+        <button class="btn btn-cta" id="send-text-btn" aria-label="Send">${icon("send")}</button>
+      </div>` : `
+      <div class="mic-wrap" id="mic-wrap"><i class="ring"></i><i class="ring r2"></i>
+        <button class="mic-btn" id="mic-btn" aria-label="Speak">${icon("mic")}</button>
+      </div>`}
+    <div class="chips scroll" style="justify-content:flex-start;">
+      ${chips.map((c) => `<button class="chip help-chip" data-text="${esc(c)}">${icon("chat")} ${esc(c)}</button>`).join("")}
+    </div>
+    <div class="chat-actions">
+      <button class="chip" id="replay-btn">${icon("replay")} Replay</button>
+      ${speechSupported ? `<button class="chip" id="mode-btn">${icon(typeMode ? "mic" : "keyboard")} ${typeMode ? "Use mic" : "Type"}</button>` : ""}
+    </div>
+  `;
+
+  panel.querySelector("#mic-btn")?.addEventListener("click", toggleRecording);
+  panel.querySelector("#replay-btn").addEventListener("click", () => {
+    const last = [...history].reverse().find((m) => m.from === "ai");
+    if (last) speak(last.text);
+  });
+  panel.querySelector("#mode-btn")?.addEventListener("click", () => { typeMode = !typeMode; renderVoicePanel(); });
+  panel.querySelectorAll(".help-chip").forEach((b) => b.addEventListener("click", () => submitStudentTurn(b.dataset.text)));
+  const input = panel.querySelector("#text-input");
+  if (input) {
+    const send = () => { if (input.value.trim()) { submitStudentTurn(input.value.trim()); input.value = ""; } };
+    panel.querySelector("#send-text-btn").addEventListener("click", send);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
   }
+}
+
+function setLive(on) {
+  document.getElementById("mic-wrap")?.classList.toggle("live", on);
+  document.getElementById("mic-btn")?.classList.toggle("recording", on);
 }
 
 function toggleRecording() {
@@ -148,17 +248,17 @@ function toggleRecording() {
 
   recognition.onstart = () => {
     recognizing = true;
-    document.getElementById("mic-btn").classList.add("recording");
-    document.getElementById("status-line").textContent = "Listening...";
+    setLive(true);
+    setStatus("Listening...");
   };
   recognition.onerror = (e) => {
     recognizing = false;
-    document.getElementById("mic-btn")?.classList.remove("recording");
-    document.getElementById("status-line").textContent = `Mic error (${e.error}). Try again.`;
+    setLive(false);
+    setStatus(e.error === "not-allowed" ? "Micro bloqué — autorise-le, ou tape/choisis une phrase." : `Mic error (${e.error}). Try again or tap a phrase.`);
   };
   recognition.onend = () => {
     recognizing = false;
-    document.getElementById("mic-btn")?.classList.remove("recording");
+    setLive(false);
   };
   recognition.onresult = (event) => {
     const transcript = event.results[0][0].transcript;
@@ -169,21 +269,22 @@ function toggleRecording() {
 
 async function submitStudentTurn(text) {
   history.push({ from: "user", text });
-  renderChatMessages();
+  renderChatMessages(`<div class="msg ai" id="typing"><span class="avatar-emoji sm">${esc(activeScenario.emoji)}</span><div class="chat-bubble ai" style="color:var(--text-muted);">...</div></div>`);
   setStatus("Thinking...");
 
   try {
     const { reply } = await api.post("/speaking/turn", {
       scenarioKey: activeScenario.key,
-      level: studentLevel,
+      level: levelName,
       history: history.slice(0, -1),
       studentMessage: text,
     });
     history.push({ from: "ai", text: reply });
     renderChatMessages();
     speak(reply);
-    setStatus(speechSupported ? "Tap the mic and speak your answer clearly." : "Type your answer...");
+    setStatus(typeMode ? "Type or tap a phrase below." : "Tap the mic and speak your answer.");
   } catch (err) {
+    document.getElementById("typing")?.remove();
     if (handlePaywallError(err)) return;
     setStatus(`⚠️ ${err.message}`);
   }
@@ -211,7 +312,7 @@ async function finishSession() {
   try {
     const { scores } = await api.post("/speaking/finish", {
       scenarioKey: activeScenario.key,
-      level: studentLevel,
+      level: levelName,
       transcript: history,
     });
     renderResults(scores);
@@ -225,32 +326,26 @@ async function finishSession() {
 
 function renderResults(scores) {
   const root = document.getElementById("speaking-root");
+  document.getElementById("shell-topbar").style.display = "";
+  const ok = scores.overall >= 60;
   root.innerHTML = `
-    <button class="btn btn-outline btn-sm" id="back-btn" style="width:fit-content;">${icon("arrowRight")} New scenario</button>
-    <div class="card" style="background:var(--primary);color:#fff;text-align:center;">
-      <p style="font-size:30px;">🎉</p>
-      <h2 style="color:#fff;font-size:20px;">Speaking Result</h2>
-      <p style="color:rgba(255,255,255,.5);font-size:12px;margin-top:4px;">${activeScenario.title}</p>
-      <p style="font-size:40px;font-weight:800;color:var(--accent);margin-top:10px;">${scores.overall}%</p>
-      <p style="color:rgba(255,255,255,.5);font-size:12px;">Overall score</p>
+    <div class="hero" style="text-align:center;">
+      <p style="font-size:34px;">🎉</p>
+      <h2>Speaking Result</h2>
+      <p class="muted" style="margin-top:2px;">${esc(activeScenario.title)}</p>
+      <p style="font-size:52px;font-weight:800;color:var(--orange-2);margin-top:10px;line-height:1;">${scores.overall}%</p>
+      <p class="muted">Overall score</p>
     </div>
-    <div class="grid grid-2">
-      ${["pronunciation", "fluency", "grammar", "vocabulary"].map((k) => `
-        <div class="card" style="text-align:center;">
-          <p style="font-size:22px;font-weight:700;color:var(--accent);">${scores[k]}%</p>
-          <p style="font-size:11.5px;color:var(--text-muted);text-transform:capitalize;">${k}</p>
-        </div>`).join("")}
+    <div class="list-card">
+      ${[["pronunciation", "mic"], ["fluency", "bolt"], ["grammar", "check"], ["vocabulary", "book"]].map(([k, ic]) => `
+        <div class="skill"><span class="s-ico">${icon(ic)}</span><span style="text-transform:capitalize;">${k}</span>
+          <div class="progress-bar"><span style="width:${scores[k]}%;"></span></div><span class="pv">${scores[k]}%</span></div>`).join("")}
     </div>
-    <div class="card">
-      <p style="font-weight:600;font-size:13px;margin-bottom:6px;">Feedback</p>
-      <p style="font-size:13px;color:var(--text-muted);">${scores.feedback || ""}</p>
-    </div>
+    <div class="tip-banner">${icon("bulb")}<span style="font-size:14.5px;">${esc(scores.feedback || (ok ? "Great job! Keep practicing." : "Good start — practice again to improve."))}</span></div>
+    <button class="btn btn-cta btn-block sticky-cta" id="back-btn">${icon("replay")} Practice another conversation</button>
   `;
-  document.getElementById("back-btn").addEventListener("click", () => { activeScenario = null; renderScenarioGrid(); });
-}
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
+  document.getElementById("back-btn").addEventListener("click", async () => {
+    try { const h = await api.get("/speaking/history"); pastSessions = h.sessions || []; } catch {}
+    activeScenario = null; renderScenarioGrid();
+  });
 }

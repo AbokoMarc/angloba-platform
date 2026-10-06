@@ -41,26 +41,52 @@ const ADMIN_NAV_ALL = [
   { key: "appearance", label: "Appearance", icon: "settings", href: "/admin/appearance.html", perm: "can_manage_appearance" },
 ];
 
-function applyTheme(appearance) {
+function applyTheme(appearance, role) {
   const root = document.documentElement.style;
-  root.setProperty("--primary", appearance.theme_primary);
-  root.setProperty("--accent", appearance.theme_accent);
+  // L'espace eleve a sa propre palette (vert fonce + orange, theme-student).
+  // Les couleurs "Appearance" de l'admin ne s'appliquent qu'au personnel.
+  if (role !== "student") {
+    root.setProperty("--primary", appearance.theme_primary);
+    root.setProperty("--accent", appearance.theme_accent);
+  }
   document.title = document.title.includes("|") ? document.title : `${document.title} | ${appearance.platform_name}`;
 }
 
-function buildStudentNav(navItems) {
-  const hrefByKey = {
-    dashboard: "/student/dashboard.html",
-    journey: "/student/journey.html",
-    lesson: "/student/lesson.html",
-    speaking: "/student/speaking-lab.html",
-    vocabulary: "/student/vocabulary.html",
-    compositions: "/student/compositions.html",
-    progress: "/student/progress.html",
-  };
-  return navItems
-    .filter((item) => hrefByKey[item.key])
-    .map((item) => ({ ...item, href: hrefByKey[item.key] }));
+// Navigation mobile eleve : 5 onglets fixes (comme sur les maquettes).
+// "More" ouvre une vraie page (profil + Vocabulary / Compositions / Progress...).
+const STUDENT_BOTTOM_NAV = [
+  { key: "dashboard", label: "Dashboard", icon: "home", href: "/student/dashboard.html" },
+  { key: "journey", label: "My Journey", icon: "map", href: "/student/journey.html" },
+  { key: "lesson", label: "Current Lesson", icon: "book", href: "/student/lesson.html" },
+  { key: "speaking", label: "Speaking Lab", icon: "mic", href: "/student/speaking-lab.html" },
+  { key: "more", label: "More", icon: "dots", href: "/student/more.html" },
+];
+// Menu complet (sidebar desktop)
+const STUDENT_SIDEBAR_NAV = [
+  ...STUDENT_BOTTOM_NAV.slice(0, 4),
+  { key: "vocabulary", label: "Vocabulary", icon: "bookmark", href: "/student/vocabulary.html" },
+  { key: "compositions", label: "Compositions", icon: "file", href: "/student/compositions.html" },
+  { key: "progress", label: "My Progress", icon: "chart", href: "/student/progress.html" },
+  { key: "leaderboard", label: "Leaderboard", icon: "trophy", href: "/student/leaderboard.html" },
+  { key: "more", label: "Profile", icon: "user", href: "/student/more.html" },
+];
+// Pages rattachees a l'onglet "More" en bas
+const STUDENT_MORE_KEYS = ["more", "vocabulary", "compositions", "progress", "leaderboard", "subscribe"];
+
+// ---- Helpers eleve partages par toutes les pages ----
+function esc(str) {
+  const div = document.createElement("div");
+  div.textContent = str == null ? "" : String(str);
+  return div.innerHTML;
+}
+function studentLevel(profile) {
+  const m = profile?.current_month || 1;
+  return m <= 3 ? "Beginner" : m <= 6 ? "Intermediate" : "Advanced";
+}
+// XP derive de la progression reelle (pas de colonne XP en base) :
+// 10 XP par jour du programme termine.
+function studentXp(profile) {
+  return Math.max(0, ((profile?.current_day || 1) - 1) * 10);
 }
 
 function buildAdminNav(user) {
@@ -112,6 +138,15 @@ function renderSidebar({ spaceLabel, navItems, activeKey, user, switchLink }) {
 function renderBottomNav({ navItems, activeKey, user }) {
   const el = document.getElementById("shell-bottomnav");
   if (!el) return;
+
+  if (user.role === "student") {
+    const active = STUDENT_MORE_KEYS.includes(activeKey) ? "more" : activeKey;
+    el.innerHTML = STUDENT_BOTTOM_NAV.map((item) => `
+      <a href="${item.href}" class="${item.key === active ? "active" : ""}" ${item.key === active ? 'aria-current="page"' : ""}>
+        ${svgIcon(item.icon)}<span>${item.label}</span>
+      </a>`).join("");
+    return;
+  }
 
   const MAX_VISIBLE = 4; // + le bouton "More" en 5e position
   const visible = navItems.length > MAX_VISIBLE ? navItems.slice(0, MAX_VISIBLE) : navItems;
@@ -221,7 +256,8 @@ async function renderShell({ roles, activeKey, title, subtitle }) {
     return null;
   }
 
-  applyTheme(appearance);
+  if (me.role === "student") document.body.classList.add("theme-student");
+  applyTheme(appearance, me.role);
   document.querySelectorAll("#logo-glyph-sidebar").forEach((n) => (n.textContent = appearance.logo_glyph));
   document.querySelectorAll("#platform-name-sidebar").forEach((n) => (n.textContent = appearance.platform_name));
 
@@ -229,7 +265,7 @@ async function renderShell({ roles, activeKey, title, subtitle }) {
 
   if (me.role === "student") {
     spaceLabel = "STUDENT SPACE";
-    navItems = buildStudentNav(appearance.nav_items);
+    navItems = STUDENT_SIDEBAR_NAV;
     roleLabel = "Student";
     roleIcon = "graduation";
   } else if (me.role === "teacher" || me.role === "superadmin") {
@@ -256,7 +292,7 @@ async function renderShell({ roles, activeKey, title, subtitle }) {
     switchLink = { href: "/teacher/dashboard.html", label: "Switch to Teacher space" };
   }
 
-  renderSidebar({ spaceLabel, navItems, activeKey, user: me, switchLink });
+  renderSidebar({ spaceLabel, navItems, activeKey: me.role === "student" && activeKey === "subscribe" ? "more" : activeKey, user: me, switchLink });
   renderBottomNav({ navItems, activeKey, user: me });
   renderTopbar({ title, subtitle, roleLabel, roleIcon });
   bindLogout();

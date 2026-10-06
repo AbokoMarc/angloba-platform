@@ -3,15 +3,15 @@
 let today = null;
 
 (async () => {
-  const ctx = await renderShell({ roles: ["student"], activeKey: "lesson", title: "Today" });
+  const ctx = await renderShell({ roles: ["student"], activeKey: "lesson", title: "Current Lesson" });
   if (!ctx) return;
 
   const root = document.getElementById("lesson-root");
   try {
     today = await api.get("/students/me/today");
-    document.querySelector("#shell-topbar div").insertAdjacentHTML(
+    document.querySelector("#shell-topbar > div").insertAdjacentHTML(
       "beforeend",
-      `<p class="sub">Day ${today.day} / ${today.totalDays} · Week ${today.week.number} · ${today.dayTypeLabel}</p>`
+      `<p class="sub">Day ${today.day}/${today.totalDays}</p>`
     );
     render();
   } catch (err) {
@@ -22,13 +22,17 @@ let today = null;
 
 function render() {
   const root = document.getElementById("lesson-root");
+  const pct = Math.round((today.day / today.totalDays) * 100);
   const headerCard = `
-    <div class="card" style="background:var(--primary);color:#fff;">
+    <div class="day-hero">
       <div class="row-between">
-        <span class="badge" style="background:color-mix(in srgb, var(--accent) 30%, transparent);color:var(--accent);">Day ${today.day} — ${today.dayTypeLabel}</span>
-        <span style="font-size:11px;color:rgba(255,255,255,.5);">Week ${today.week.number} · ${today.week.title}</span>
+        <div>
+          <h2>Day ${today.day} · ${esc(today.dayTypeLabel)}</h2>
+          <p>Week ${today.week.number} · ${esc(today.week.title)}</p>
+        </div>
+        <span class="pill pill-dark">${pct}%</span>
       </div>
-      <div class="progress-bar" style="background:rgba(255,255,255,.15);margin-top:10px;"><span style="width:${(today.day / today.totalDays) * 100}%;"></span></div>
+      <div class="progress-bar on-dark" style="margin-top:12px;"><span style="width:${Math.max(pct, 2)}%;"></span></div>
     </div>
   `;
 
@@ -44,13 +48,13 @@ function render() {
 function renderGrammarDay(root, headerCard) {
   root.innerHTML = `
     ${headerCard}
-    <div class="card">
-      <button class="btn btn-outline btn-sm" id="read-grammar-btn" style="margin-bottom:10px;">${icon("volume")} Écouter la leçon</button>
-      <div id="grammar-html-content">${today.grammarHtml || "<p>Contenu à venir.</p>"}</div>
+    <div class="sec-card">
+      <button class="btn btn-outline btn-sm" id="read-grammar-btn" style="margin-bottom:12px;">${icon("volume")} Écouter la leçon</button>
+      <div class="grammar-body" id="grammar-html-content">${today.grammarHtml || "<p>Contenu à venir.</p>"}</div>
     </div>
-    <div class="card">
-      <p style="font-weight:600;font-size:13.5px;margin-bottom:8px;">🎯 Speaking task for this week</p>
-      <p style="font-size:13.5px;color:var(--text-muted);">${today.speakingTask || "—"}</p>
+    <div class="sec-card" style="background:var(--orange-soft);">
+      <h3>🎯 Speaking task for this week</h3>
+      <p style="font-size:15px;color:#5A3A12;font-weight:600;">${today.speakingTask || "—"}</p>
     </div>
     ${continueButton("Continue to Vocabulary")}
   `;
@@ -67,27 +71,24 @@ function renderVocabularyDay(root, headerCard) {
     ${headerCard}
     ${today.images?.length ? `
       <div>
-        <p style="font-weight:600;font-size:14px;margin:4px 0 10px;">🖼️ Picture Vocabulary</p>
-        <div class="grid grid-3">
+        <h2 class="sec-title" style="margin-bottom:8px;">Picture Vocabulary</h2>
+        <div class="pic-strip">
           ${today.images.map((img) => `
-            <div class="card" style="padding:0;overflow:hidden;text-align:center;">
-              <img src="${img.image_url}" alt="${img.word}" style="width:100%;height:80px;object-fit:cover;" />
-              <div style="padding:6px;"><p style="font-size:11px;font-weight:600;">${img.word}</p><p style="font-size:10px;color:var(--text-muted);">${img.translation_fr}</p></div>
+            <div class="pic">
+              <div class="ph"><img src="${img.image_url}" alt="${esc(img.word)}" loading="lazy" onerror="this.remove()" />📷</div>
+              <b>${esc(img.word)}</b><span>${esc(img.translation_fr)}</span>
             </div>`).join("")}
         </div>
       </div>` : ""}
-    <div class="grid grid-2">
+    <div class="stack" style="gap:10px;">
       ${today.vocabulary.length ? today.vocabulary.map((v) => `
-        <div class="card">
-          <div class="row-between">
-            <span class="row" style="gap:6px;">
-              <span style="font-weight:600;font-size:13.5px;">${v.word}</span>
-              <button class="speak-word-btn" data-word="${v.word}" style="color:var(--text-muted);">${icon("volume")}</button>
-            </span>
-            <span class="badge badge-muted">${v.word_type || ""}</span>
+        <div class="word">
+          <div>
+            <p><span class="w">${esc(v.word)}</span>${v.word_type ? `<span class="tag">${esc(v.word_type)}</span>` : ""}</p>
+            <p class="fr">${esc(v.fr || "")}</p>
+            ${v.gb_variant ? `<div class="row" style="margin-top:6px;gap:4px;"><span class="badge" style="background:#DCE6FB;color:#3B6FE0;">GB ${esc(v.gb_variant)}</span><span class="badge badge-accent">US ${esc(v.us_variant)}</span></div>` : ""}
           </div>
-          <p style="font-size:12px;color:var(--text-muted);margin-top:4px;">FR ${v.fr || ""}</p>
-          ${v.gb_variant ? `<div class="row" style="margin-top:8px;gap:4px;"><span class="badge" style="background:#DCE6FB;color:#3B6FE0;">GB ${v.gb_variant}</span><span class="badge badge-accent">US ${v.us_variant}</span></div>` : ""}
+          <div class="acts"><button class="icon-btn speak-word-btn" data-word="${esc(v.word)}" aria-label="Écouter">${icon("volume")}</button></div>
         </div>`).join("") : `<div class="empty-state">Pas encore de vocabulaire pour cette semaine.</div>`}
     </div>
     ${continueButton("Continue to Exercises")}
@@ -100,87 +101,112 @@ function renderVocabularyDay(root, headerCard) {
 
 function renderExercisesDay(root, headerCard) {
   const questions = today.questions;
-  const selections = new Array(questions.length).fill(null);
+  const total = questions.length;
+  const selections = new Array(total).fill(null);
+  let cur = 0;
+  let graded = false;
 
   root.innerHTML = `
-    ${headerCard}
-    ${today.bestScore !== null ? `<div class="card" style="background:var(--row);font-size:12.5px;">Ton meilleur score jusqu'ici : <b>${today.bestScore}%</b> (minimum requis : ${today.passThreshold}%)</div>` : ""}
-    <div id="quiz-questions"></div>
-    <button class="btn btn-primary btn-block" id="submit-exercises-btn" disabled>Submit Answers (0/${questions.length})</button>
-    <div id="exercises-result"></div>
+    <div class="exo-head">
+      <h2>Day ${today.day} Exercises</h2>
+      <p>Week ${today.week.number} · ${esc(today.week.title)}</p>
+    </div>
+    <div id="exo-body" class="stack"></div>
   `;
+  const body = document.getElementById("exo-body");
 
-  const container = document.getElementById("quiz-questions");
-  container.innerHTML = questions.map((q, i) => `
-    <div class="card" style="margin-bottom:10px;">
-      <p style="font-size:13px;font-weight:600;margin-bottom:10px;">${i + 1}. ${q.question} <span class="badge badge-muted" style="margin-left:4px;">W${q.weekNumber}</span></p>
-      <div class="stack" style="gap:6px;">
-        ${q.options.map((opt, oi) => `
-          <button class="exo-select btn btn-outline" data-q="${i}" data-idx="${oi}" style="justify-content:flex-start;text-align:left;">
-            <span style="color:var(--text-muted);margin-right:6px;">${String.fromCharCode(65 + oi)}.</span>${opt}
-          </button>`).join("")}
+  function answeredCount() { return selections.filter((s) => s !== null).length; }
+
+  function draw() {
+    const q = questions[cur];
+    const pct = Math.round(((cur + 1) / total) * 100);
+    const isLast = cur === total - 1;
+    const allDone = answeredCount() === total;
+    body.innerHTML = `
+      <div class="q-progress"><span>Progress ${cur + 1}/${total}</span><div class="progress-bar"><span style="width:${pct}%;"></span></div><span>${pct}%</span></div>
+      <div class="card row-between" style="padding:12px 14px;">
+        ${today.bestScore !== null ? `<span class="pill pill-orange" style="font-size:14px;">${icon("trophy")} Best: ${today.bestScore}%</span>` : `<span class="pill pill-green">${icon("star")} First try</span>`}
+        <span style="font-weight:700;color:var(--brand);">Minimum ${today.passThreshold}%</span>
       </div>
-    </div>`).join("");
+      <div class="card">
+        <p style="text-align:center;"><span class="pill pill-green" style="font-size:12px;letter-spacing:.04em;">QUESTION ${cur + 1}</span></p>
+        <h3 style="font-size:24px;font-weight:800;color:var(--brand);margin:12px 0 14px;line-height:1.25;">${cur + 1}. ${esc(q.question)}</h3>
+        <div class="stack" style="gap:10px;">
+          ${q.options.map((opt, oi) => `
+            <button class="opt ${selections[cur] === oi ? "sel" : ""}" data-idx="${oi}">
+              <span class="letter">${String.fromCharCode(65 + oi)}</span><span>${esc(opt)}</span>
+              <span class="mark">${icon("check")}</span>
+            </button>`).join("")}
+        </div>
+      </div>
+      <div class="nav-row sticky-cta">
+        <button class="btn btn-outline" id="prev-btn" ${cur === 0 ? "disabled" : ""}>${icon("chevronLeft")} Previous</button>
+        ${isLast
+          ? `<button class="btn btn-cta" id="submit-exercises-btn" ${allDone ? "" : "disabled"}>Submit (${answeredCount()}/${total})</button>`
+          : `<button class="btn btn-cta" id="next-btn">Next ${icon("chevronRight")}</button>`}
+      </div>
+      <div class="dots">${questions.map((_, i) => `<button class="${i === cur ? "cur" : selections[i] !== null ? "done" : ""}" data-go="${i}" aria-label="Question ${i + 1}"></button>`).join("")}</div>
+      ${isLast && !allDone ? `<p style="text-align:center;font-size:13px;color:var(--danger);font-weight:700;">Réponds à toutes les questions pour valider (${total - answeredCount()} restante(s)).</p>` : ""}
+      <div id="exercises-result"></div>
+    `;
 
-  const submitBtn = document.getElementById("submit-exercises-btn");
-  container.querySelectorAll(".exo-select").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const qi = Number(btn.dataset.q);
-      selections[qi] = Number(btn.dataset.idx);
-      container.querySelectorAll(`.exo-select[data-q="${qi}"]`).forEach((b) => { b.style.background = ""; b.style.borderColor = ""; b.style.color = ""; });
-      btn.style.background = "var(--row)"; btn.style.borderColor = "var(--primary)"; btn.style.color = "var(--primary)";
-      const answered = selections.filter((s) => s !== null).length;
-      submitBtn.textContent = `Submit Answers (${answered}/${questions.length})`;
-      submitBtn.disabled = answered < questions.length;
-    });
-  });
+    body.querySelectorAll(".opt").forEach((btn) => btn.addEventListener("click", () => {
+      const at = cur;
+      selections[at] = Number(btn.dataset.idx);
+      draw();
+      // Passe automatiquement a la question suivante (plus rapide sur mobile)
+      if (at < total - 1) setTimeout(() => { if (cur === at && !graded) { cur += 1; draw(); } }, 350);
+    }));
+    body.querySelector("#prev-btn")?.addEventListener("click", () => { cur -= 1; draw(); });
+    body.querySelector("#next-btn")?.addEventListener("click", () => { cur += 1; draw(); });
+    body.querySelectorAll("[data-go]").forEach((d) => d.addEventListener("click", () => { cur = Number(d.dataset.go); draw(); }));
+    body.querySelector("#submit-exercises-btn")?.addEventListener("click", submit);
+  }
 
-  submitBtn.addEventListener("click", async () => {
+  async function submit() {
+    const submitBtn = document.getElementById("submit-exercises-btn");
     submitBtn.disabled = true;
     submitBtn.innerHTML = `<span class="spinner"></span> Grading...`;
-
     const answers = questions.map((q, i) => ({ questionId: q.id, selectedIndex: selections[i] }));
 
     if (!navigator.onLine) {
       await queuePendingAction({ url: "/students/me/today/submit-exercises", method: "post", body: { answers }, description: "Exercices du jour" });
-      document.getElementById("exercises-result").innerHTML = `<div class="card" style="text-align:center;background:var(--row);margin-top:10px;">☁️ Réponses enregistrées, seront corrigées et synchronisées dès ta reconnexion.</div>`;
-      submitBtn.remove();
+      body.innerHTML = `<div class="card" style="text-align:center;">☁️ Réponses enregistrées, elles seront corrigées et synchronisées dès ta reconnexion.</div>`;
       if (typeof updateOfflineIndicator === "function") updateOfflineIndicator();
       return;
     }
 
     try {
       const result = await api.post("/students/me/today/submit-exercises", { answers });
-
-      // On ne connait pas l'index correct cote client (jamais envoye, pour
-      // eviter la triche) — on colore juste la reponse choisie par l'eleve
-      // en vert/rouge selon si elle etait juste.
-      questions.forEach((q, i) => {
-        const chosenBtn = container.querySelector(`.exo-select[data-q="${i}"][data-idx="${selections[i]}"]`);
-        container.querySelectorAll(`.exo-select[data-q="${i}"]`).forEach((b) => (b.style.pointerEvents = "none"));
-        if (!chosenBtn) return;
-        if (result.results[i]?.correct) {
-          chosenBtn.style.background = "var(--success-bg)"; chosenBtn.style.borderColor = "var(--success)"; chosenBtn.style.color = "var(--success)";
-        } else {
-          chosenBtn.style.background = "var(--danger-bg)"; chosenBtn.style.borderColor = "var(--danger)"; chosenBtn.style.color = "var(--danger)";
-        }
-      });
-      document.getElementById("exercises-result").innerHTML = `
-        <div class="card" style="text-align:center;background:${result.passed ? "var(--success-bg)" : "var(--danger-bg)"};color:${result.passed ? "var(--success)" : "var(--danger)"};margin-top:10px;">
-          <p style="font-size:22px;font-weight:800;">${result.scorePct}%</p>
-          <p style="font-size:12.5px;">${result.passed ? `Réussi ! (minimum ${result.passThreshold}%)` : `Pas encore assez (minimum ${result.passThreshold}%) — retente.`}</p>
+      graded = true;
+      const ok = result.passed;
+      // L'index correct n'est jamais envoye au client (anti-triche) : on
+      // colore seulement la reponse choisie (vert = juste, rouge = fausse).
+      body.innerHTML = `
+        <div class="score-card" style="background:${ok ? "var(--green-soft)" : "var(--danger-bg)"};color:${ok ? "#14663F" : "var(--danger)"};">
+          <p style="font-size:34px;">${ok ? "🎉" : "💪"}</p>
+          <p class="num">${result.scorePct}%</p>
+          <p style="font-weight:800;font-size:16px;margin-top:6px;">${ok ? "Bravo, c'est validé !" : "Presque ! Retente pour passer."}</p>
+          <p style="font-size:13px;font-weight:600;opacity:.85;">Minimum requis : ${result.passThreshold}%</p>
         </div>
-        ${result.passed ? continueButton("Continue to Practice") : `<button class="btn btn-outline btn-block" onclick="location.reload()">Réessayer</button>`}
+        ${ok ? continueButton("Continue to Practice") : `<button class="btn btn-cta btn-block sticky-cta" onclick="location.reload()">Try again</button>`}
+        <h2 class="sec-title">Your answers</h2>
+        ${questions.map((q, i) => {
+          const good = result.results[i]?.correct;
+          return `<div class="review-q"><p class="q">${i + 1}. ${esc(q.question)}</p>
+            <div class="opt ${good ? "ok" : "bad"}"><span class="letter">${String.fromCharCode(65 + (selections[i] ?? 0))}</span><span>${esc(q.options[selections[i]] ?? "")}</span><span class="mark">${good ? icon("check") : icon("x")}</span></div></div>`;
+        }).join("")}
       `;
-      if (result.passed) bindContinueButton();
-      submitBtn.remove();
+      if (ok) bindContinueButton();
     } catch (err) {
       if (handlePaywallError(err)) return;
       submitBtn.disabled = false;
       submitBtn.textContent = "Retry";
       alert(err.message);
     }
-  });
+  }
+
+  draw();
 }
 
 /* ---------------- Day type 4 : Practice (Composition + Speaking) ---------------- */
@@ -194,20 +220,20 @@ function renderPracticeDay(root, headerCard) {
   root.innerHTML = `
     ${headerCard}
     ${hasComposition ? `
-      <div class="card">
-        <p style="font-weight:600;font-size:14px;margin-bottom:6px;">✍️ Composition — ${today.composition.title}</p>
-        <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px;">${today.composition.prompt}</p>
+      <div class="sec-card">
+        <h3>✍️ Composition — ${esc(today.composition.title)}</h3>
+        <p style="font-size:14.5px;color:var(--text-muted);margin-bottom:12px;">${esc(today.composition.prompt)}</p>
         ${compOk
           ? `<span class="badge badge-success">✅ Validée — score ${today.submission.score}/100</span>`
           : today.submission?.status === "submitted"
             ? `<span class="badge badge-accent">⏳ En attente de correction</span>`
-            : `<a href="/student/compositions.html" class="btn btn-primary btn-sm">Rédiger ma composition ${icon("arrowRight")}</a>`}
+            : `<a href="/student/compositions.html" class="btn btn-cta btn-sm">Rédiger ma composition ${icon("chevronRight")}</a>`}
       </div>` : ""}
     ${hasSpeaking ? `
-      <div class="card">
-        <p style="font-weight:600;font-size:14px;margin-bottom:6px;">🎙️ Speaking Lab — ${today.speakingScenario.title}</p>
-        <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px;">Meilleur score actuel : ${today.bestSpeakingScore || 0}% (minimum ${today.speakingPassThreshold}%)</p>
-        ${speakOk ? `<span class="badge badge-success">✅ Validé</span>` : `<a href="/student/speaking-lab.html" class="btn btn-primary btn-sm">Aller au Speaking Lab ${icon("arrowRight")}</a>`}
+      <div class="sec-card">
+        <h3>🎙️ Speaking Lab — ${esc(today.speakingScenario.title)}</h3>
+        <p style="font-size:14.5px;color:var(--text-muted);margin-bottom:12px;">Meilleur score actuel : ${today.bestSpeakingScore || 0}% (minimum ${today.speakingPassThreshold}%)</p>
+        ${speakOk ? `<span class="badge badge-success">✅ Validé</span>` : `<a href="/student/speaking-lab.html" class="btn btn-cta btn-sm">Aller au Speaking Lab ${icon("chevronRight")}</a>`}
       </div>` : ""}
     ${!hasComposition && !hasSpeaking ? `<div class="card empty-state">Rien de spécial aujourd'hui — tu peux directement continuer.</div>` : ""}
     ${continueButton("Continue to Review")}
@@ -220,13 +246,13 @@ function renderPracticeDay(root, headerCard) {
 function renderReviewDay(root, headerCard) {
   root.innerHTML = `
     ${headerCard}
-    <div class="card" style="text-align:center;">
-      <p style="font-size:30px;">🎉</p>
-      <p style="font-weight:600;font-size:16px;">Semaine ${today.week.number} terminée !</p>
-      <p style="font-size:13px;color:var(--text-muted);margin-top:6px;">${today.weekSummary.grammarTitle || ""}</p>
-      ${today.weekSummary.exerciseScore !== null ? `<p style="font-size:12.5px;margin-top:8px;">Score exercices : <b>${today.weekSummary.exerciseScore}%</b></p>` : ""}
+    <div class="score-card" style="background:var(--card);">
+      <p style="font-size:40px;">🎉</p>
+      <p style="font-weight:800;font-size:20px;color:var(--brand);margin-top:6px;">Semaine ${today.week.number} terminée !</p>
+      <p style="font-size:14px;color:var(--text-muted);margin-top:6px;">${esc(today.weekSummary.grammarTitle || "")}</p>
+      ${today.weekSummary.exerciseScore !== null ? `<p style="margin-top:12px;"><span class="pill pill-green" style="font-size:14px;">Score exercices : ${today.weekSummary.exerciseScore}%</span></p>` : ""}
     </div>
-    ${continueButton("Continue to next week →")}
+    ${continueButton("Continue to next week")}
   `;
   bindContinueButton();
 }
@@ -235,7 +261,7 @@ function renderReviewDay(root, headerCard) {
 
 function continueButton(label) {
   return `
-    <button class="btn btn-primary btn-block" id="advance-day-btn">${label}</button>
+    <button class="btn btn-cta btn-block sticky-cta" id="advance-day-btn" data-original-label="${label}">${label} ${icon("chevronRight")}</button>
     <div id="advance-day-reasons"></div>
   `;
 }
@@ -256,9 +282,9 @@ function bindContinueButton() {
       const box = document.getElementById("advance-day-reasons");
       if (box) {
         box.innerHTML = (reasons?.length ? reasons : [err.message])
-          .map((r) => `<p style="font-size:12.5px;color:var(--danger);margin-top:6px;">⚠️ ${r}</p>`).join("");
+          .map((r) => `<p style="font-size:14px;font-weight:700;color:var(--danger);margin-top:6px;">⚠️ ${esc(r)}</p>`).join("");
       }
-      btn.textContent = btn.dataset.originalLabel || "Retry";
+      btn.innerHTML = `${btn.dataset.originalLabel || "Retry"} ${icon("chevronRight")}`;
     }
   });
 }
