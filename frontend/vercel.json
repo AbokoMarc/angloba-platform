@@ -1,6 +1,9 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://angloba-platform.onrender.com/api/:path*" }
+    { "source": "/api/:path*", "destination": "https://angloba-platform.onrender.com/api/:path*" },
+    { "source": "/uploads/:path*", "destination": "https://angloba-platform.onrender.com/uploads/:path*" },
+    { "source": "/seed-audio/:path*", "destination": "https://angloba-platform.onrender.com/seed-audio/:path*" },
+    { "source": "/seed-images/:path*", "destination": "https://angloba-platform.onrender.com/seed-images/:path*" }
   ],
   "headers": [
     {
