@@ -6,7 +6,7 @@
 // can_manage_students (accordee par le super admin).
 
 import { db } from "../db/client.js";
-import { requireRole, requirePermission } from "../middleware/auth.js";
+import { requireRole, requirePermission, invalidateUserStatus } from "../middleware/auth.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
 import { recordActivity } from "../utils/activity.js";
 import { sendPushToRole } from "../services/webpush.service.js";
@@ -79,6 +79,7 @@ export async function updateStudent(req, res, params) {
     const derivedWeek = Math.min(36, Math.ceil(clampedDay / 5));
     const derivedMonth = Math.min(9, Math.ceil(derivedWeek / 4));
     fields.push("current_day = ?"); args.push(clampedDay);
+    fields.push("overall_pct = ?"); args.push(Math.round(((clampedDay - 1) / 180) * 100));
     fields.push("current_week = ?"); args.push(derivedWeek);
     fields.push("current_month = ?"); args.push(derivedMonth);
   }
@@ -102,7 +103,9 @@ export async function updateStudent(req, res, params) {
     await db.execute({ sql: `UPDATE student_profiles SET ${fields.join(", ")} WHERE user_id = ?`, args });
   }
   if (body.status !== undefined) {
+    if (!["active", "inactive"].includes(body.status)) return sendJson(res, 400, { error: "Statut invalide." });
     await db.execute({ sql: "UPDATE users SET status = ? WHERE id = ?", args: [body.status, studentId] });
+    invalidateUserStatus(studentId);
   }
 
   sendJson(res, 200, { ok: true });
@@ -162,89 +165,10 @@ export async function leaderboard(req, res) {
 // Auto-limite : ne peut jamais depasser la semaine 36, et le mois se
 // recalcule automatiquement a partir du numero de semaine.
 export async function advanceMyWeek(req, res) {
+  // Route heritee de l'ancien parcours "par semaines". Le parcours est desormais
+  // journalier (POST /students/me/advance-day) : cette route ne mettait a jour
+  // que la semaine et desynchronisait current_day (le jour reste la source de verite).
   const user = requireRole(req, res, "student");
   if (!user) return;
-
-  const profile = (await db.execute({
-    sql: "SELECT current_week FROM student_profiles WHERE user_id = ?",
-    args: [user.id],
-  })).rows[0];
-  if (!profile) return sendJson(res, 404, { error: "Profil eleve introuvable." });
-
-  const currentWeek = profile.current_week;
-  const missing = [];
-
-  // Condition 1 : exercices
-  const weekRow = (await db.execute({ sql: "SELECT id FROM weeks WHERE number = ?", args: [currentWeek] })).rows[0];
-  const exerciseCount = weekRow
-    ? (await db.execute({ sql: "SELECT COUNT(*) as n FROM exercises WHERE week_id = ?", args: [weekRow.id] })).rows[0].n
-    : 0;
-
-  if (exerciseCount > 0) {
-    const scoreRow = (await db.execute({
-      sql: "SELECT score_pct FROM exercise_scores WHERE student_id = ? AND week_number = ?",
-      args: [user.id, currentWeek],
-    })).rows[0];
-    if (!scoreRow || scoreRow.score_pct < EXERCISE_PASS_THRESHOLD) {
-      missing.push(`Termine les exercices de la semaine (score minimum ${EXERCISE_PASS_THRESHOLD}%, ton meilleur score actuel : ${scoreRow ? scoreRow.score_pct : 0}%).`);
-    }
-  }
-
-  // Condition 2 : composition due a cette semaine
-  const composition = weekRow
-    ? (await db.execute({ sql: "SELECT id, title FROM compositions WHERE week_id = ?", args: [weekRow.id] })).rows[0]
-    : null;
-  if (composition) {
-    const submission = (await db.execute({
-      sql: "SELECT status, score FROM composition_submissions WHERE composition_id = ? AND student_id = ?",
-      args: [composition.id, user.id],
-    })).rows[0];
-    const ok = submission && submission.status === "corrected" && submission.score >= COMPOSITION_PASS_THRESHOLD;
-    if (!ok) {
-      missing.push(`Ta composition "${composition.title}" doit d'abord etre validee (score minimum ${COMPOSITION_PASS_THRESHOLD}/100) par ton professeur ou par l'IA.`);
-    }
-  }
-
-  // Condition 3 : scenario de Speaking Lab rattache a cette semaine — un
-  // score >= SPEAKING_PASS_THRESHOLD suffit (delibbrement pas plus exigeant,
-  // pour ne pas bloquer l'eleve indefiniment sur la prononciation).
-  const speakingScenario = (await db.execute({ sql: "SELECT id, title FROM speaking_scenarios WHERE week_number = ?", args: [currentWeek] })).rows[0];
-  if (speakingScenario) {
-    const bestSession = (await db.execute({
-      sql: "SELECT scores_json FROM speaking_sessions WHERE student_id = ? AND scenario_id = ? ORDER BY created_at DESC",
-      args: [user.id, speakingScenario.id],
-    })).rows;
-    const passed = bestSession.some((s) => {
-      try { return JSON.parse(s.scores_json).overall >= SPEAKING_PASS_THRESHOLD; } catch { return false; }
-    });
-    if (!passed) {
-      missing.push(`Termine le Speaking Lab "${speakingScenario.title}" avec un score d'au moins ${SPEAKING_PASS_THRESHOLD}%.`);
-    }
-  }
-
-  if (missing.length) {
-    return sendJson(res, 403, { error: "Conditions non remplies pour avancer.", reasons: missing });
-  }
-
-  const nextWeekNumber = Math.min(currentWeek + 1, 36);
-
-  const nextWeekRow = (await db.execute({
-    sql: "SELECT month_id FROM weeks WHERE number = ?",
-    args: [nextWeekNumber],
-  })).rows[0];
-  const monthRow = nextWeekRow
-    ? (await db.execute({ sql: "SELECT number FROM months WHERE id = ?", args: [nextWeekRow.month_id] })).rows[0]
-    : null;
-
-  await db.execute({
-    sql: "UPDATE student_profiles SET current_week = ?, current_month = ? WHERE user_id = ?",
-    args: [nextWeekNumber, monthRow ? monthRow.number : profile.current_month, user.id],
-  });
-
-  await recordActivity(user.id);
-
-  sendPushToRole("admin", { title: "English Academy - Progression", body: `${user.name} passe à la semaine ${nextWeekNumber}. 🎉`, url: "/admin/students.html" }, "system").catch(() => {});
-  sendPushToRole("superadmin", { title: "English Academy - Progression", body: `${user.name} passe à la semaine ${nextWeekNumber}. 🎉`, url: "/admin/students.html" }, "system").catch(() => {});
-
-  sendJson(res, 200, { currentWeek: nextWeekNumber, currentMonth: monthRow ? monthRow.number : null });
+  sendJson(res, 410, { error: "Route abandonnee : utilise /students/me/advance-day." });
 }

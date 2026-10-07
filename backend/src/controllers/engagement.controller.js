@@ -98,7 +98,7 @@ export async function checkInactive(req, res) {
         ? `Ta série de ${student.streak_days} jours est en jeu. 5 minutes suffisent aujourd'hui !`
         : "Tu n'as pas fait ton anglais aujourd'hui. 5 minutes seulement !",
       url: "/student/dashboard.html",
-    }, "system");
+    }, "system").catch((err) => console.error("[cron/check-inactifs] push echoue:", err.message));
   }
 
   // Inactifs depuis 48h+ : le streak est vraiment casse (comme Duolingo sans "streak freeze")
@@ -123,9 +123,12 @@ export async function checkInactive(req, res) {
     const newWeek = Math.max(1, student.current_week - 1);
     const weekRow = (await db.execute({ sql: "SELECT month_id FROM weeks WHERE number = ?", args: [newWeek] })).rows[0];
     const monthRow = weekRow ? (await db.execute({ sql: "SELECT number FROM months WHERE id = ?", args: [weekRow.month_id] })).rows[0] : null;
+    // Le JOUR est la source de verite du parcours : on le recale aussi, sinon la
+    // retrogradation n'avait aucun effet visible (semaine changee, jour inchange).
+    const newDay = (newWeek - 1) * 5 + 1;
     await db.execute({
-      sql: "UPDATE student_profiles SET current_week = ?, current_month = ? WHERE user_id = ?",
-      args: [newWeek, monthRow?.number || 1, student.id],
+      sql: "UPDATE student_profiles SET current_week = ?, current_month = ?, current_day = ?, overall_pct = ? WHERE user_id = ?",
+      args: [newWeek, monthRow?.number || 1, newDay, Math.round(((newDay - 1) / 180) * 100), student.id],
     });
     sendPushToUser(student.id, {
       title: "English Academy",

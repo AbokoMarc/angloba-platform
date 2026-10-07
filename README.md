@@ -208,3 +208,18 @@ utilisable sur petit écran, y compris le bouton micro tactile.
 - Uploader tes propres audios de listening/prononciation.
 - Éventuellement brancher un vrai stockage objet pour les audios en
   production (voir section "Upload audio" ci-dessus).
+
+
+## Reseau mobile (Orange / MTN Cameroun) — a lire
+
+- Render gratuit s'endort apres 15 min : le 1er appel prend 30-60 s. Cree un
+  cron sur cron-job.org qui appelle `https://<ton-backend>/api/health` toutes
+  les 10 min (ou passe sur un plan payant).
+- Cree la base Turso dans la region la plus proche (ex. `fra`/`cdg`).
+- Le frontend gere maintenant timeouts (20 s), relances automatiques et
+  bandeau "connexion lente" ; il pre-chauffe le serveur des l'ouverture.
+- Option : `frontend/vercel.json` proxifie `/api` vers le backend (meme domaine,
+  plus de preflight CORS). Dans ce cas mets `API_BASE_URL: "/api"` dans config.js.
+- Ne versionne JAMAIS `backend/.env` ni `backend/data/*.sqlite`. Change
+  JWT_SECRET et SUPERADMIN_PASSWORD (le jeu de secrets livre auparavant est a
+  considerer comme compromis).

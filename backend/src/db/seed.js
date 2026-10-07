@@ -10,6 +10,7 @@
 //    le travail de l'admin sur les redemarrages suivants).
 
 import fs from "node:fs";
+import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { db } from "./client.js";
@@ -31,17 +32,46 @@ const SEED_IMAGES = [
   { word: "Book", translationFr: "Livre", file: "book.png", week: 1 },
 ];
 
+// A incrementer si la LOGIQUE du seed change (en plus du contenu, deja pris en
+// compte automatiquement par l'empreinte ci-dessous).
+const SEED_CODE_VERSION = 2;
+
+// Empreinte du schema + de tout le contenu seede. Tant qu'elle ne change pas,
+// inutile de rejouer ~100 requetes SQL sequentielles vers Turso a CHAQUE
+// demarrage (c'etait la cause principale d'un reveil de 30 a 60 s sur Render
+// gratuit : le serveur n'acceptait aucune requete pendant ce temps).
+function computeFingerprint() {
+  const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
+  const content = JSON.stringify([MONTHS, WEEKS, GRAMMAR_HTML, VOCABULARY, EXERCISES, COMPOSITIONS, SPEAKING_SCENARIOS, SEED_IMAGES, DEMO_AUDIO]);
+  return crypto.createHash("sha1").update(`${SEED_CODE_VERSION}|${schema}|${content}`).digest("hex");
+}
+
 export async function ensureSchemaAndSeed() {
-  await applySchema();
-  await runMigrations();
-  await seedAppearance();
+  await db.execute("CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT)");
+  const fingerprint = computeFingerprint();
+  const stored = (await db.execute({ sql: "SELECT value FROM app_meta WHERE key = 'seed_fingerprint'", args: [] })).rows[0]?.value;
+
+  if (stored !== fingerprint) {
+    console.log("[seed] Schema/contenu modifie (ou premier demarrage) : initialisation complete...");
+    await applySchema();
+    await runMigrations();
+    await seedAppearance();
+    await seedCurriculum();
+    await seedMissingExercises();
+    await seedSpeakingScenarios();
+    await seedCompositions();
+    await seedDemoAudio();
+    await seedVocabularyImages();
+    await db.execute({
+      sql: "INSERT INTO app_meta (key, value) VALUES ('seed_fingerprint', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      args: [fingerprint],
+    });
+  } else {
+    console.log("[seed] Base deja a jour : initialisation rapide.");
+  }
+
+  // Toujours verifie (1 seule requete) : couvre un changement de SUPERADMIN_* dans l'env.
   await seedSuperAdmin();
-  await seedCurriculum();
-  await seedMissingExercises();
-  await seedSpeakingScenarios();
-  await seedCompositions();
-  await seedDemoAudio();
-  await seedVocabularyImages();
 }
 
 // Ajoute les colonnes/tables introduites APRES le premier lancement de la
@@ -90,14 +120,26 @@ async function runMigrations() {
     WHERE current_day = 1 AND current_week > 1
   `);
 
+  // overall_pct n'etait ecrit nulle part : tous les eleves affichaient 0 %
+  // (page Progress, dashboards prof/admin, classement). On le recalcule depuis le jour.
+  await db.execute(`
+    UPDATE student_profiles
+    SET overall_pct = CAST(ROUND((current_day - 1) * 100.0 / 180) AS INTEGER)
+    WHERE overall_pct = 0 AND current_day > 1
+  `);
+
   console.log("[migrate] Migrations appliquees.");
 }
 
 async function applySchema() {
   const sql = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
   const statements = sql.split(";").map((s) => s.trim()).filter(Boolean);
-  for (const stmt of statements) {
-    await db.execute(stmt);
+  try {
+    // UN seul aller-retour reseau pour tout le schema (au lieu d'un par table).
+    await db.batch(statements, "write");
+  } catch (err) {
+    console.warn("[seed] batch indisponible, application une par une :", err.message);
+    for (const stmt of statements) await db.execute(stmt);
   }
   console.log("[seed] Schema OK.");
 }
@@ -264,7 +306,7 @@ async function seedDemoAudio() {
   const existing = await db.execute({ sql: "SELECT id FROM audio_resources LIMIT 1", args: [] });
   if (existing.rows.length) return; // ne jamais ecraser le travail de l'admin
 
-  const publicBase = process.env.PUBLIC_API_BASE_URL || "http://localhost:4000";
+  const publicBase = (process.env.PUBLIC_API_BASE_URL || "").replace(/\/$/, ""); // vide = URL relative, completee a la sortie de l'API
   for (const a of DEMO_AUDIO) {
     const week = (await db.execute({ sql: "SELECT id FROM weeks WHERE number = ?", args: [a.week] })).rows[0];
     await db.execute({
@@ -293,7 +335,7 @@ async function seedVocabularyImages() {
   const existing = await db.execute({ sql: "SELECT id FROM media_images LIMIT 1", args: [] });
   if (existing.rows.length) return;
 
-  const publicBase = process.env.PUBLIC_API_BASE_URL || "http://localhost:4000";
+  const publicBase = (process.env.PUBLIC_API_BASE_URL || "").replace(/\/$/, ""); // vide = URL relative, completee a la sortie de l'API
   for (const img of SEED_IMAGES) {
     await db.execute({
       sql: `INSERT INTO media_images (id, word, translation_fr, image_url, week_number) VALUES (?, ?, ?, ?, ?)`,

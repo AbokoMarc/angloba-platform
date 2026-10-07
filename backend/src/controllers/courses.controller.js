@@ -9,6 +9,7 @@ import { db } from "../db/client.js";
 import { requireRole, requirePermission } from "../middleware/auth.js";
 import { requireActiveAccess } from "../middleware/subscription.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
+import { fixRows } from "../utils/public-url.js";
 import { newId } from "../utils/ids.js";
 import { recordActivity } from "../utils/activity.js";
 
@@ -20,7 +21,10 @@ export async function getFullProgram(req, res) {
   if (!user) return;
 
   const months = (await db.execute({ sql: "SELECT * FROM months ORDER BY number", args: [] })).rows;
-  const weeks = (await db.execute({ sql: "SELECT * FROM weeks ORDER BY number", args: [] })).rows;
+  // Colonnes allegees : le HTML de grammaire des 36 semaines n'a rien a faire dans
+  // l'arbre du programme (poids inutile sur reseau mobile, et contenu payant expose
+  // aux comptes sans abonnement). Le detail passe par /courses/weeks/:number.
+  const weeks = (await db.execute({ sql: "SELECT id, month_id, number, title, grammar_title, is_test_week FROM weeks ORDER BY number", args: [] })).rows;
 
   const tree = months.map((m) => ({
     ...m,
@@ -44,7 +48,7 @@ export async function getWeekDetail(req, res, params) {
   const vocabulary = (await db.execute({ sql: "SELECT * FROM vocabulary_words WHERE week_id = ?", args: [week.id] })).rows;
   const exercises = (await db.execute({ sql: "SELECT * FROM exercises WHERE week_id = ?", args: [week.id] })).rows
     .map((e) => ({ ...e, options: JSON.parse(e.options_json) }));
-  const audios = (await db.execute({ sql: "SELECT * FROM audio_resources WHERE week_id = ?", args: [week.id] })).rows;
+  const audios = fixRows(req, (await db.execute({ sql: "SELECT * FROM audio_resources WHERE week_id = ?", args: [week.id] })).rows, "url");
 
   sendJson(res, 200, { week, vocabulary, exercises, audios });
 }

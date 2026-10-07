@@ -13,6 +13,7 @@ import { db } from "../db/client.js";
 import { requireRole } from "../middleware/auth.js";
 import { requireActiveAccess } from "../middleware/subscription.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
+import { fixRows } from "../utils/public-url.js";
 import { recordActivity } from "../utils/activity.js";
 import { sendPushToRole, sendPushToUser } from "../services/webpush.service.js";
 import { generateQuestionSet, gradeAnswers } from "../utils/daily-exercises.js";
@@ -51,7 +52,7 @@ export async function getToday(req, res) {
 
   if (dayType === 2) {
     const vocabulary = (await db.execute({ sql: "SELECT * FROM vocabulary_words WHERE week_id = ?", args: [week.id] })).rows;
-    const images = (await db.execute({ sql: "SELECT * FROM media_images WHERE week_number <= ? ORDER BY week_number ASC", args: [weekNumber] })).rows;
+    const images = fixRows(req, (await db.execute({ sql: "SELECT * FROM media_images WHERE week_number <= ? ORDER BY week_number ASC", args: [weekNumber] })).rows, "image_url");
     return sendJson(res, 200, { ...base, vocabulary, images });
   }
 
@@ -90,12 +91,20 @@ export async function getToday(req, res) {
 export async function submitTodayExercises(req, res) {
   const user = requireRole(req, res, "student");
   if (!user) return;
+  const ok = await requireActiveAccess(req, res, user);
+  if (!ok) return;
 
   const profile = (await db.execute({ sql: "SELECT current_day FROM student_profiles WHERE user_id = ?", args: [user.id] })).rows[0];
   const weekNumber = dayToWeek(profile?.current_day || 1);
 
+  // On ne note QUE le lot de questions genere pour cet eleve et cette semaine
+  // (meme graine que GET /today). Avant : n'importe quels identifiants de
+  // question etaient acceptes (doublons, questions faciles d'autres semaines...),
+  // ce qui permettait d'obtenir 100 % sans avoir fait les exercices.
   const body = await readJsonBody(req);
-  const { scorePct, results } = await gradeAnswers(body.answers || []);
+  const set = await generateQuestionSet(weekNumber, `${user.id}-week${weekNumber}-exercises`);
+  const sent = new Map((Array.isArray(body.answers) ? body.answers : []).map((a) => [a?.questionId, a?.selectedIndex]));
+  const { scorePct, results } = await gradeAnswers(set.map((q) => ({ questionId: q.id, selectedIndex: sent.get(q.id) })));
 
   await db.execute({
     sql: `INSERT INTO exercise_scores (id, student_id, week_number, score_pct, updated_at)
@@ -114,6 +123,8 @@ export async function submitTodayExercises(req, res) {
 export async function advanceDay(req, res) {
   const user = requireRole(req, res, "student");
   if (!user) return;
+  const access = await requireActiveAccess(req, res, user);
+  if (!access) return;
 
   const profile = (await db.execute({ sql: "SELECT current_day FROM student_profiles WHERE user_id = ?", args: [user.id] })).rows[0];
   if (!profile) return sendJson(res, 404, { error: "Profil eleve introuvable." });
@@ -155,8 +166,8 @@ export async function advanceDay(req, res) {
   const nextMonth = weekToMonth(nextWeek);
 
   await db.execute({
-    sql: "UPDATE student_profiles SET current_day = ?, current_week = ?, current_month = ? WHERE user_id = ?",
-    args: [nextDay, nextWeek, nextMonth, user.id],
+    sql: "UPDATE student_profiles SET current_day = ?, current_week = ?, current_month = ?, overall_pct = ? WHERE user_id = ?",
+    args: [nextDay, nextWeek, nextMonth, Math.round(((nextDay - 1) / TOTAL_DAYS) * 100), user.id],
   });
   await recordActivity(user.id);
 

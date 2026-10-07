@@ -107,10 +107,14 @@ async function reconcileTransaction(transactionId) {
   const result = await verifyPayment(payment.provider_reference);
   if (result.status === "pending") return;
 
-  await db.execute({
-    sql: "UPDATE payments SET status = ?, confirmed_at = datetime('now') WHERE transaction_id = ?",
+  // Mise a jour ATOMIQUE : seul l'appel qui fait passer 'pending' -> final
+  // continue. Avant, le webhook NotchPay et la page de retour pouvaient
+  // s'executer en meme temps et ajouter DEUX FOIS 30 jours d'abonnement.
+  const claimed = await db.execute({
+    sql: "UPDATE payments SET status = ?, confirmed_at = datetime('now') WHERE transaction_id = ? AND status = 'pending'",
     args: [result.status, transactionId],
   });
+  if (!claimed.rowsAffected) return;
 
   if (result.status === "success") {
     const profile = (await db.execute({

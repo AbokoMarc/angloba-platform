@@ -17,6 +17,13 @@ import { recordActivity } from "../utils/activity.js";
 import { speakingReply, speakingScore } from "../services/ai.service.js";
 import { sendPushToRole } from "../services/webpush.service.js";
 
+// Garde uniquement {from:'ai'|'user', text} avec un texte borne.
+function cleanTranscript(list) {
+  return (Array.isArray(list) ? list : [])
+    .filter((m) => m && (m.from === "ai" || m.from === "user") && typeof m.text === "string")
+    .map((m) => ({ from: m.from, text: m.text.slice(0, 500) }));
+}
+
 // POST /api/speaking/turn
 // body: { scenarioKey, level, history: [{from,text}], studentMessage }
 export async function speakingTurn(req, res) {
@@ -32,12 +39,18 @@ export async function speakingTurn(req, res) {
   })).rows[0];
   if (!scenario) return sendJson(res, 404, { error: "Scenario introuvable." });
 
+  // Limites : chaque appel IA est facture/quota. Sans plafond, une requete
+  // manuelle avec un historique geant epuisait le quota Gemini/Claude.
+  const studentMessage = String(body.studentMessage || "").slice(0, 500);
+  if (!studentMessage.trim()) return sendJson(res, 400, { error: "Message vide." });
+  const history = cleanTranscript(body.history).slice(-20);
+
   try {
     const reply = await speakingReply({
       scenario,
       level: body.level || scenario.level,
-      history: body.history || [],
-      studentMessage: body.studentMessage,
+      history,
+      studentMessage,
     });
     await recordActivity(user.id);
     sendJson(res, 200, { reply });
@@ -52,6 +65,8 @@ export async function speakingTurn(req, res) {
 export async function speakingFinish(req, res) {
   const user = requireRole(req, res, "student");
   if (!user) return;
+  const access = await requireActiveAccess(req, res, user);
+  if (!access) return;
 
   const body = await readJsonBody(req);
   const scenario = (await db.execute({
@@ -61,12 +76,16 @@ export async function speakingFinish(req, res) {
   if (!scenario) return sendJson(res, 404, { error: "Scenario introuvable." });
 
   try {
-    const scores = await speakingScore({ scenario, level: body.level || scenario.level, transcript: body.transcript || [] });
+    const transcript = cleanTranscript(body.transcript).slice(-40);
+    if (!transcript.some((m) => m.from === "user")) {
+      return sendJson(res, 400, { error: "Parle au moins une fois avant de terminer la session." });
+    }
+    const scores = await speakingScore({ scenario, level: body.level || scenario.level, transcript });
     const id = newId("spk");
     await db.execute({
       sql: `INSERT INTO speaking_sessions (id, student_id, scenario_id, transcript_json, scores_json, ai_feedback)
             VALUES (?, ?, ?, ?, ?, ?)`,
-      args: [id, user.id, scenario.id, JSON.stringify(body.transcript || []), JSON.stringify(scores), scores.feedback || ""],
+      args: [id, user.id, scenario.id, JSON.stringify(transcript), JSON.stringify(scores), scores.feedback || ""],
     });
     await recordActivity(user.id);
 

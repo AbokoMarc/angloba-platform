@@ -1,6 +1,7 @@
 // backend/src/controllers/auth.controller.js
 import { db } from "../db/client.js";
-import { hashPassword, verifyPassword } from "../utils/password.js";
+import { hashPasswordAsync, verifyPasswordAsync } from "../utils/password.js";
+import { allow, clientIp } from "../utils/rate-limit.js";
 import { signToken } from "../utils/jwt.js";
 import { newId } from "../utils/ids.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
@@ -11,14 +12,25 @@ import { sendPushToRole } from "../services/webpush.service.js";
 // Les comptes professeur/admin ne peuvent JAMAIS s'auto-inscrire ici :
 // ils sont crees uniquement par le super admin (ou un admin habilite).
 export async function register(req, res) {
+  // Anti-spam : 10 inscriptions / heure / adresse IP.
+  if (!allow(`reg:${clientIp(req)}`, 10, 60 * 60 * 1000)) {
+    return sendJson(res, 429, { error: "Trop d'inscriptions depuis cette connexion. Reessaie dans une heure." });
+  }
+
   const body = await readJsonBody(req);
   const { name, email, password } = body;
 
-  if (!name || !email || !password) {
+  if (typeof name !== "string" || typeof email !== "string" || typeof password !== "string" || !name.trim() || !email.trim() || !password) {
     return sendJson(res, 400, { error: "Nom, email et mot de passe requis." });
+  }
+  if (name.length > 100 || email.length > 200 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    return sendJson(res, 400, { error: "Adresse email invalide." });
   }
   if (password.length < 6) {
     return sendJson(res, 400, { error: "Le mot de passe doit faire au moins 6 caracteres." });
+  }
+  if (password.length > 200) {
+    return sendJson(res, 400, { error: "Mot de passe trop long." });
   }
 
   const existing = await db.execute({
@@ -29,7 +41,7 @@ export async function register(req, res) {
     return sendJson(res, 409, { error: "Un compte existe deja avec cet email." });
   }
 
-  const { hash, salt } = hashPassword(password);
+  const { hash, salt } = await hashPasswordAsync(password);
   const id = newId("usr");
 
   await db.execute({
@@ -52,8 +64,15 @@ export async function register(req, res) {
 export async function login(req, res) {
   const body = await readJsonBody(req);
   const { email, password } = body;
-  if (!email || !password) {
+  if (typeof email !== "string" || typeof password !== "string" || !email || !password || password.length > 200) {
     return sendJson(res, 400, { error: "Email et mot de passe requis." });
+  }
+
+  // Anti brute-force : 8 essais / 15 min par (IP + email), 40 / 15 min par IP.
+  const ip = clientIp(req);
+  const emailKey = email.toLowerCase().trim();
+  if (!allow(`login:${ip}:${emailKey}`, 8, 15 * 60 * 1000) || !allow(`loginip:${ip}`, 40, 15 * 60 * 1000)) {
+    return sendJson(res, 429, { error: "Trop de tentatives. Reessaie dans quelques minutes." });
   }
 
   const result = await db.execute({
@@ -62,7 +81,7 @@ export async function login(req, res) {
   });
   const user = result.rows[0];
 
-  if (!user || !verifyPassword(password, user.password_hash, user.password_salt)) {
+  if (!user || !(await verifyPasswordAsync(password, user.password_hash, user.password_salt))) {
     return sendJson(res, 401, { error: "Email ou mot de passe incorrect." });
   }
   if (user.status !== "active") {

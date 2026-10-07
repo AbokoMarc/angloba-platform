@@ -39,19 +39,25 @@ export async function getDailyQuiz(req, res) {
 export async function submitDailyQuiz(req, res) {
   const user = requireRole(req, res, "student");
   if (!user) return;
+  const ok = await requireActiveAccess(req, res, user);
+  if (!ok) return;
 
   const body = await readJsonBody(req);
-  const answers = body.answers || [];
+  const answers = Array.isArray(body.answers) ? body.answers : [];
   if (!answers.length) return sendJson(res, 400, { error: "Aucune reponse fournie." });
 
-  const { scorePct, results } = await gradeAnswers(answers);
+  // Seules les questions du quiz du jour (meme graine que GET /daily-quiz) sont notees.
+  const profile = (await db.execute({ sql: "SELECT current_week FROM student_profiles WHERE user_id = ?", args: [user.id] })).rows[0];
+  const set = await generateQuestionSet(profile?.current_week || 1, `${user.id}-${new Date().toISOString().slice(0, 10)}`);
+  const sent = new Map(answers.map((a) => [a?.questionId, a?.selectedIndex]));
+  const { scorePct, results } = await gradeAnswers(set.map((q) => ({ questionId: q.id, selectedIndex: sent.get(q.id) })));
   const today = new Date().toISOString().slice(0, 10);
 
   await db.execute({
     sql: `INSERT INTO daily_quiz_attempts (id, student_id, quiz_date, score_pct, total_questions)
           VALUES (?, ?, ?, ?, ?)
           ON CONFLICT(student_id, quiz_date) DO UPDATE SET score_pct = excluded.score_pct, total_questions = excluded.total_questions`,
-    args: [newId("dq"), user.id, today, scorePct, answers.length],
+    args: [newId("dq"), user.id, today, scorePct, set.length],
   });
 
   await recordActivity(user.id);

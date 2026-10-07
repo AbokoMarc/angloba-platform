@@ -15,6 +15,30 @@ export function getUserFromRequest(req) {
   return verifyToken(token); // { sub, role, name, iat, exp } ou null
 }
 
+// --- Statut du compte (actif / desactive) ---
+// Le JWT dure 1 an : sans verification, un eleve/prof/admin DESACTIVE garderait
+// son acces a l'API jusqu'a expiration du jeton. server.js appelle cette
+// verification avant chaque handler (1 requete SQL par utilisateur et par minute).
+const STATUS_TTL_MS = 60 * 1000;
+const statusCache = new Map(); // userId -> { active, at }
+
+export function invalidateUserStatus(userId) {
+  if (userId) statusCache.delete(userId); else statusCache.clear();
+}
+
+// Retourne false si le jeton est valide MAIS le compte est desactive/supprime.
+// Pas de jeton ou jeton invalide : true (les handlers renverront leur 401 habituel).
+export async function isAccountActive(req) {
+  const payload = getUserFromRequest(req);
+  if (!payload) return true;
+  const cached = statusCache.get(payload.sub);
+  if (cached && Date.now() - cached.at < STATUS_TTL_MS) return cached.active;
+  const row = (await db.execute({ sql: "SELECT status FROM users WHERE id = ?", args: [payload.sub] })).rows[0];
+  const active = Boolean(row) && row.status === "active";
+  statusCache.set(payload.sub, { active, at: Date.now() });
+  return active;
+}
+
 // A utiliser au debut de chaque handler protege.
 // Retourne l'utilisateur ou envoie une 401 et retourne null.
 export function requireAuth(req, res) {

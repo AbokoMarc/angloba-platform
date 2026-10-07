@@ -8,9 +8,9 @@
 // accordable — c'est le seul privilege strictement reserve au super admin.
 
 import { db } from "../db/client.js";
-import { hashPassword } from "../utils/password.js";
+import { hashPasswordAsync, generateTempPassword } from "../utils/password.js";
 import { newId } from "../utils/ids.js";
-import { requireRole } from "../middleware/auth.js";
+import { requireRole, invalidateUserStatus } from "../middleware/auth.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
 
 const PERMISSION_FIELDS = [
@@ -47,8 +47,8 @@ export async function createAdmin(req, res) {
   const existing = await db.execute({ sql: "SELECT id FROM users WHERE email = ?", args: [email.toLowerCase().trim()] });
   if (existing.rows.length) return sendJson(res, 409, { error: "Email deja utilise." });
 
-  const tempPassword = Math.random().toString(36).slice(-8);
-  const { hash, salt } = hashPassword(tempPassword);
+  const tempPassword = generateTempPassword();
+  const { hash, salt } = await hashPasswordAsync(tempPassword);
   const id = newId("usr");
 
   await db.execute({
@@ -93,6 +93,8 @@ export async function updateAdminStatus(req, res, params) {
   const user = requireRole(req, res, "superadmin");
   if (!user) return;
   const body = await readJsonBody(req);
+  if (!["active", "inactive"].includes(body.status)) return sendJson(res, 400, { error: "Statut invalide." });
   await db.execute({ sql: "UPDATE users SET status = ? WHERE id = ? AND role = 'admin'", args: [body.status, params.id] });
+  invalidateUserStatus(params.id);
   sendJson(res, 200, { ok: true });
 }

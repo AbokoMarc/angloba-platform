@@ -13,6 +13,7 @@
 import { db } from "../db/client.js";
 import { requireRole, requirePermission } from "../middleware/auth.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
+import { fixRows } from "../utils/public-url.js";
 import { newId } from "../utils/ids.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -22,6 +23,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = path.join(__dirname, "..", "..", "uploads");
 
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+// L'extension venait telle quelle du client : "mp3/../../server.js" permettait
+// d'ECRASER n'importe quel fichier du serveur. On n'accepte qu'une liste blanche.
+const ALLOWED_EXT = { audio: ["mp3", "wav", "ogg", "m4a"], image: ["png", "jpg", "jpeg", "webp", "gif"], video: ["mp4", "webm"] };
+function safeExt(kind, ext, fallback) {
+  const e = String(ext || fallback).toLowerCase().replace(/^\./, "");
+  return ALLOWED_EXT[kind].includes(e) ? e : null;
+}
 
 // POST /api/media/upload
 // body: { title, category: 'listening'|'vocabulary'|'speaking_example',
@@ -40,11 +49,13 @@ export async function uploadAudio(req, res) {
     return sendJson(res, 400, { error: "title, category et fileBase64 sont requis." });
   }
 
-  const filename = `${newId("aud")}.${fileExt || "mp3"}`;
+  const ext = safeExt("audio", fileExt, "mp3");
+  if (!ext) return sendJson(res, 400, { error: "Format audio non autorise (mp3, wav, ogg, m4a)." });
+  const filename = `${newId("aud")}.${ext}`;
   const filePath = path.join(UPLOAD_DIR, filename);
   fs.writeFileSync(filePath, Buffer.from(fileBase64, "base64"));
 
-  const publicBase = process.env.PUBLIC_UPLOAD_BASE_URL || "http://localhost:4000/uploads";
+  const publicBase = process.env.PUBLIC_UPLOAD_BASE_URL || "/uploads";
   const url = `${publicBase}/${filename}`;
 
   let weekId = null;
@@ -73,7 +84,7 @@ export async function listAudio(req, res) {
           LEFT JOIN users u ON u.id = ar.uploaded_by ORDER BY ar.created_at DESC`,
     args: [],
   })).rows;
-  sendJson(res, 200, { audios: rows });
+  sendJson(res, 200, { audios: fixRows(req, rows, "url") });
 }
 
 // ============================================================
@@ -99,9 +110,11 @@ export async function uploadImage(req, res) {
 
   let url = imageUrl;
   if (!url && fileBase64) {
-    const filename = `${newId("img")}.${fileExt || "png"}`;
+    const ext = safeExt("image", fileExt, "png");
+    if (!ext) return sendJson(res, 400, { error: "Format image non autorise (png, jpg, webp, gif)." });
+    const filename = `${newId("img")}.${ext}`;
     fs.writeFileSync(path.join(UPLOAD_DIR, filename), Buffer.from(fileBase64, "base64"));
-    url = `${process.env.PUBLIC_UPLOAD_BASE_URL || "http://localhost:4000/uploads"}/${filename}`;
+    url = `${process.env.PUBLIC_UPLOAD_BASE_URL || "/uploads"}/${filename}`;
   }
 
   const id = newId("img");
@@ -121,7 +134,7 @@ export async function listImages(req, res) {
           LEFT JOIN users u ON u.id = mi.uploaded_by ORDER BY mi.week_number ASC, mi.created_at ASC`,
     args: [],
   })).rows;
-  sendJson(res, 200, { images: rows });
+  sendJson(res, 200, { images: fixRows(req, rows, "image_url") });
 }
 
 // ============================================================
@@ -144,9 +157,11 @@ export async function uploadVideo(req, res) {
 
   let url = videoUrl;
   if (!url && fileBase64) {
-    const filename = `${newId("vid")}.${fileExt || "mp4"}`;
+    const ext = safeExt("video", fileExt, "mp4");
+    if (!ext) return sendJson(res, 400, { error: "Format video non autorise (mp4, webm)." });
+    const filename = `${newId("vid")}.${ext}`;
     fs.writeFileSync(path.join(UPLOAD_DIR, filename), Buffer.from(fileBase64, "base64"));
-    url = `${process.env.PUBLIC_UPLOAD_BASE_URL || "http://localhost:4000/uploads"}/${filename}`;
+    url = `${process.env.PUBLIC_UPLOAD_BASE_URL || "/uploads"}/${filename}`;
   }
 
   const id = newId("vid");
@@ -165,5 +180,5 @@ export async function listVideos(req, res) {
           LEFT JOIN users u ON u.id = mv.uploaded_by ORDER BY mv.created_at DESC`,
     args: [],
   })).rows;
-  sendJson(res, 200, { videos: rows });
+  sendJson(res, 200, { videos: fixRows(req, rows, "url") });
 }

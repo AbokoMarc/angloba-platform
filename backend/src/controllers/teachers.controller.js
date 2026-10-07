@@ -4,9 +4,9 @@
 // superadmin, ou un admin avec can_manage_teachers, peuvent creer un prof.
 
 import { db } from "../db/client.js";
-import { hashPassword } from "../utils/password.js";
+import { hashPasswordAsync, generateTempPassword } from "../utils/password.js";
 import { newId } from "../utils/ids.js";
-import { requireRole, requirePermission } from "../middleware/auth.js";
+import { requireRole, requirePermission, invalidateUserStatus } from "../middleware/auth.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
 
 const TEACHER_SELECT = `
@@ -42,8 +42,8 @@ export async function createTeacher(req, res) {
   if (existing.rows.length) return sendJson(res, 409, { error: "Email deja utilise." });
 
   // Mot de passe temporaire genere (a communiquer au prof) — pattern identique a Clo-Clo pour les livreurs.
-  const tempPassword = Math.random().toString(36).slice(-8);
-  const { hash, salt } = hashPassword(tempPassword);
+  const tempPassword = generateTempPassword();
+  const { hash, salt } = await hashPasswordAsync(tempPassword);
   const id = newId("usr");
 
   await db.execute({
@@ -72,7 +72,9 @@ export async function updateTeacherStatus(req, res, params) {
   }
 
   const body = await readJsonBody(req);
+  if (!["active", "inactive"].includes(body.status)) return sendJson(res, 400, { error: "Statut invalide." });
   await db.execute({ sql: "UPDATE users SET status = ? WHERE id = ? AND role = 'teacher'", args: [body.status, params.id] });
+  invalidateUserStatus(params.id);
 
   // Si desactive : les eleves repassent "non assigne" — a l'admin de les rediriger.
   if (body.status === "inactive") {

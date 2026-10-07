@@ -39,6 +39,7 @@ function request(method, path, body) {
         });
       }
     );
+    req.setTimeout(20000, () => req.destroy(new Error("NotchPay ne repond pas, reessaie dans un instant.")));
     req.on("error", reject);
     if (payload) req.write(payload);
     req.end();

@@ -73,6 +73,7 @@ function callClaude({ system, messages, maxTokens = 700 }) {
         });
       }
     );
+    req.setTimeout(25000, () => req.destroy(new Error("L'IA met trop de temps a repondre, reessaie.")));
     req.on("error", reject);
     req.write(body);
     req.end();
@@ -129,6 +130,7 @@ function callGemini({ system, messages, maxTokens = 700 }) {
         });
       }
     );
+    req.setTimeout(25000, () => req.destroy(new Error("L'IA met trop de temps a repondre, reessaie.")));
     req.on("error", reject);
     req.write(body);
     req.end();
