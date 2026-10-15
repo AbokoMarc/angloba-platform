@@ -12,12 +12,12 @@
     const weekNum = profile?.current_week || 1;
     const dayNum = profile?.current_day || 1;
     const weekTitle = profile?.week_title || "Getting started";
-    const pct = Math.round((dayNum / 180) * 100);
+    const pct = Math.round((dayNum / 252) * 100);
     const streak = profile?.streak_days || 0;
 
     const topSub = document.querySelector("#shell-topbar > div");
     if (topSub && !topSub.querySelector(".sub")) {
-      topSub.insertAdjacentHTML("beforeend", `<p class="sub">Day ${dayNum}/180 · Month ${monthNum} · Week ${weekNum}</p>`);
+      topSub.insertAdjacentHTML("beforeend", `<p class="sub">Day ${dayNum}/252 · Month ${monthNum} · Week ${weekNum}</p>`);
     }
 
     root.innerHTML = `
@@ -26,7 +26,7 @@
       <section class="hero">
         <h2>Good to see you, ${esc(ctx.user.name.split(" ")[0])}</h2>
         <p class="muted" style="margin-top:10px;font-weight:700;">Your English Journey</p>
-        <p class="muted" style="margin-top:2px;">Day ${dayNum}/180 · Week ${weekNum} · ${esc(weekTitle)}</p>
+        <p class="muted" style="margin-top:2px;">Day ${dayNum}/252 · Week ${weekNum} · ${esc(weekTitle)}</p>
         <div class="row" style="margin-top:12px;">
           <span class="accent-text" style="font-size:15px;">${pct}%</span>
           <div class="progress-bar on-dark" style="flex:1;"><span style="width:${Math.max(pct, 3)}%;"></span></div>

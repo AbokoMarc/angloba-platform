@@ -43,9 +43,15 @@ export async function submitComposition(req, res, params) {
   const status = body.submit ? "submitted" : "draft";
 
   const existing = await db.execute({
-    sql: "SELECT id FROM composition_submissions WHERE composition_id = ? AND student_id = ?",
+    sql: "SELECT id, status FROM composition_submissions WHERE composition_id = ? AND student_id = ?",
     args: [params.id, user.id],
   });
+  // Une copie deja envoyee ou corrigee ne se modifie plus (evite de "re-ouvrir" une
+  // composition validee, ce qui remettait la correction en attente et bloquait l'eleve).
+  if (existing.rows[0] && existing.rows[0].status !== "draft") {
+    return sendJson(res, 409, { error: existing.rows[0].status === "corrected" ? "Cette composition est déjà corrigée." : "Cette composition est déjà envoyée, en attente de correction." });
+  }
+  if (body.submit && wordCount < 5) return sendJson(res, 400, { error: "Écris ta composition avant de l'envoyer." });
 
   if (existing.rows.length) {
     await db.execute({

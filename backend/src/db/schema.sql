@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS student_profiles (
   course_name  TEXT DEFAULT 'English B1',
   current_month INTEGER NOT NULL DEFAULT 1,
   current_week  INTEGER NOT NULL DEFAULT 1,
-  current_day   INTEGER NOT NULL DEFAULT 1,   -- unite de progression reelle : 1..180 (36 semaines x 5 jours)
+  current_day   INTEGER NOT NULL DEFAULT 1,   -- unite de progression reelle : 1..252 (36 semaines x 7 jours)
   streak_days   INTEGER NOT NULL DEFAULT 0,
   overall_pct   INTEGER NOT NULL DEFAULT 0,
   subscription_status   TEXT NOT NULL DEFAULT 'trial' CHECK (subscription_status IN ('trial','active','expired')),
@@ -282,3 +282,19 @@ CREATE TABLE IF NOT EXISTS daily_quiz_attempts (
 CREATE INDEX IF NOT EXISTS idx_media_images_week ON media_images(week_number);
 CREATE INDEX IF NOT EXISTS idx_media_videos_week ON media_videos(week_number);
 CREATE INDEX IF NOT EXISTS idx_daily_quiz_student ON daily_quiz_attempts(student_id);
+
+
+-- Taches du jour (parcours en semaines de 7 jours) : une ligne par eleve, par
+-- jour et par tache. Le jour n'est valide que lorsque TOUTES ses taches sont "done".
+CREATE TABLE IF NOT EXISTS day_tasks (
+  student_id TEXT NOT NULL REFERENCES users(id),
+  day        INTEGER NOT NULL,
+  task_key   TEXT NOT NULL,
+  done       INTEGER NOT NULL DEFAULT 0,
+  best_score INTEGER,
+  attempts   INTEGER NOT NULL DEFAULT 0,
+  body       TEXT,
+  opened_at  TEXT,
+  updated_at TEXT,
+  PRIMARY KEY (student_id, day, task_key)
+);

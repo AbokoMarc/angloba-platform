@@ -17,6 +17,8 @@ import { db } from "./client.js";
 import { hashPassword } from "../utils/password.js";
 import { newId } from "../utils/ids.js";
 import { MONTHS, WEEKS, GRAMMAR_HTML, VOCABULARY, EXERCISES, COMPOSITIONS, SPEAKING_SCENARIOS } from "./curriculum-data.js";
+import * as EXTRA from "./content/index.js";
+import { migrateOldDay, weekToMonth, dayToWeek, TOTAL_DAYS } from "../utils/day-mapping.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SEED_IMAGES = [
@@ -34,7 +36,7 @@ const SEED_IMAGES = [
 
 // A incrementer si la LOGIQUE du seed change (en plus du contenu, deja pris en
 // compte automatiquement par l'empreinte ci-dessous).
-const SEED_CODE_VERSION = 2;
+const SEED_CODE_VERSION = 3;
 
 // Empreinte du schema + de tout le contenu seede. Tant qu'elle ne change pas,
 // inutile de rejouer ~100 requetes SQL sequentielles vers Turso a CHAQUE
@@ -42,7 +44,7 @@ const SEED_CODE_VERSION = 2;
 // gratuit : le serveur n'acceptait aucune requete pendant ce temps).
 function computeFingerprint() {
   const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
-  const content = JSON.stringify([MONTHS, WEEKS, GRAMMAR_HTML, VOCABULARY, EXERCISES, COMPOSITIONS, SPEAKING_SCENARIOS, SEED_IMAGES, DEMO_AUDIO]);
+  const content = JSON.stringify([MONTHS, WEEKS, GRAMMAR_HTML, VOCABULARY, EXERCISES, COMPOSITIONS, SPEAKING_SCENARIOS, SEED_IMAGES, DEMO_AUDIO, EXTRA.GRAMMAR_HTML, EXTRA.VOCABULARY, EXTRA.EXERCISES]);
   return crypto.createHash("sha1").update(`${SEED_CODE_VERSION}|${schema}|${content}`).digest("hex");
 }
 
@@ -58,6 +60,7 @@ export async function ensureSchemaAndSeed() {
     await seedAppearance();
     await seedCurriculum();
     await seedMissingExercises();
+    await seedContentUpgrade();
     await seedSpeakingScenarios();
     await seedCompositions();
     await seedDemoAudio();
@@ -114,17 +117,35 @@ async function runMigrations() {
   // parcours journalier avaient uniquement current_week. On leur calcule un
   // current_day equivalent (Day 1 de leur semaine actuelle) au lieu de les
   // faire redemarrer a Day 1 du programme entier.
+  const alreadyMigrated = Boolean((await db.execute({ sql: "SELECT value FROM app_meta WHERE key = 'daymap_v7'", args: [] })).rows[0]);
   await db.execute(`
     UPDATE student_profiles
-    SET current_day = (current_week - 1) * 5 + 1
+    SET current_day = (current_week - 1) * ${alreadyMigrated ? 7 : 5} + 1
     WHERE current_day = 1 AND current_week > 1
   `);
+
+  // Passage a des semaines de 7 jours (avant : 5). Une seule fois : on convertit
+  // le jour courant de chaque eleve vers la nouvelle echelle (meme semaine,
+  // meme type de journee), puis on resynchronise semaine / mois / pourcentage.
+  if (!alreadyMigrated) {
+    const students = (await db.execute({ sql: "SELECT user_id, current_day FROM student_profiles", args: [] })).rows;
+    for (const st of students) {
+      const newDay = migrateOldDay(Number(st.current_day) || 1);
+      const wk = dayToWeek(newDay);
+      await db.execute({
+        sql: "UPDATE student_profiles SET current_day = ?, current_week = ?, current_month = ?, overall_pct = ? WHERE user_id = ?",
+        args: [newDay, wk, weekToMonth(wk), Math.round(((newDay - 1) / TOTAL_DAYS) * 100), st.user_id],
+      });
+    }
+    await db.execute({ sql: "INSERT INTO app_meta (key, value) VALUES ('daymap_v7', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", args: [new Date().toISOString()] });
+    console.log(`[migrate] ${students.length} eleve(s) converti(s) vers des semaines de 7 jours.`);
+  }
 
   // overall_pct n'etait ecrit nulle part : tous les eleves affichaient 0 %
   // (page Progress, dashboards prof/admin, classement). On le recalcule depuis le jour.
   await db.execute(`
     UPDATE student_profiles
-    SET overall_pct = CAST(ROUND((current_day - 1) * 100.0 / 180) AS INTEGER)
+    SET overall_pct = CAST(ROUND((current_day - 1) * 100.0 / ${TOTAL_DAYS}) AS INTEGER)
     WHERE overall_pct = 0 AND current_day > 1
   `);
 
@@ -249,6 +270,45 @@ async function seedMissingExercises() {
     }
   }
   if (added) console.log(`[seed] ${added} nouveaux exercices ajoutes (semaines completees, sans doublons).`);
+}
+
+// Complete les semaines avec le contenu de content/ : grammaire manquante
+// (remplace UNIQUEMENT le texte "Contenu a completer"), mots et exercices absents
+// (comparaison par texte exact). Ne modifie jamais ce que l'admin a ecrit.
+async function seedContentUpgrade() {
+  const weeks = (await db.execute({ sql: "SELECT id, number, grammar_html FROM weeks", args: [] })).rows;
+  const statements = [];
+  for (const w of weeks) {
+    const n = String(w.number);
+    const g = EXTRA.GRAMMAR_HTML[n];
+    if (g && (!w.grammar_html || w.grammar_html.startsWith("<p>Contenu a completer"))) {
+      statements.push({ sql: "UPDATE weeks SET grammar_html = ? WHERE id = ?", args: [g, w.id] });
+    }
+    const words = new Set((await db.execute({ sql: "SELECT word FROM vocabulary_words WHERE week_id = ?", args: [w.id] })).rows.map((r) => r.word.toLowerCase()));
+    for (const v of EXTRA.VOCABULARY[n] || []) {
+      if (words.has(v.word.toLowerCase())) continue;
+      words.add(v.word.toLowerCase());
+      statements.push({
+        sql: "INSERT INTO vocabulary_words (id, week_id, word, word_type, fr, gb_variant, us_variant) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        args: [newId("voc"), w.id, v.word, v.wordType, v.fr, v.gb || null, v.us || null],
+      });
+    }
+    const questions = new Set((await db.execute({ sql: "SELECT question FROM exercises WHERE week_id = ?", args: [w.id] })).rows.map((r) => r.question));
+    for (const ex of EXTRA.EXERCISES[n] || []) {
+      if (questions.has(ex.question)) continue;
+      questions.add(ex.question);
+      statements.push({
+        sql: "INSERT INTO exercises (id, week_id, question, options_json, correct_index) VALUES (?, ?, ?, ?, ?)",
+        args: [newId("exo"), w.id, ex.question, JSON.stringify(ex.options), ex.correctIndex],
+      });
+    }
+  }
+  for (let i = 0; i < statements.length; i += 100) {
+    const chunk = statements.slice(i, i + 100);
+    try { await db.batch(chunk, "write"); }
+    catch (err) { for (const st of chunk) await db.execute(st); }
+  }
+  if (statements.length) console.log(`[seed] Contenu complete : ${statements.length} ajouts (grammaire, vocabulaire, exercices).`);
 }
 
 async function seedSpeakingScenarios() {

@@ -58,7 +58,7 @@ function draw(filter = "") {
       </td>
       <td>
         <div class="row" style="gap:4px;">
-          Day <input type="number" class="day-input" data-id="${s.id}" value="${s.current_day || 1}" min="1" max="180" style="width:56px;padding:4px 4px;font-size:12px;" />
+          Day <input type="number" class="day-input" data-id="${s.id}" value="${s.current_day || 1}" min="1" max="252" style="width:56px;padding:4px 4px;font-size:12px;" />
           <span style="font-size:10.5px;color:var(--text-muted);">(W${s.current_week})</span>
         </div>
       </td>

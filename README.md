@@ -223,3 +223,38 @@ utilisable sur petit écran, y compris le bouton micro tactile.
 - Ne versionne JAMAIS `backend/.env` ni `backend/data/*.sqlite`. Change
   JWT_SECRET et SUPERADMIN_PASSWORD (le jeu de secrets livre auparavant est a
   considerer comme compromis).
+
+
+## Parcours : une semaine = 7 jours complets (v16)
+
+Le programme compte maintenant **252 jours** (36 semaines x 7 jours). Chaque jour a
+plusieurs tâches ; l'élève ne passe au jour suivant que si **toutes** sont faites :
+
+| Jour | Contenu | À valider |
+|---|---|---|
+| 1 Grammar | leçon + mini-quiz | lire (délai mini 20 s) + 5 questions, 60 % |
+| 2 Vocabulary | mots + images + quiz | parcourir + 8 questions, 60 % |
+| 3 Exercises | 20 questions | 60 % |
+| 4 Speaking | 6 phrases à répéter (+ Speaking Lab si la semaine en a un) | confirmer + 70 % au Lab |
+| 5 Writing | composition de la semaine, sinon écriture courte | composition **corrigée** / texte >= N mots |
+| 6 Review | 20 questions des semaines passées | 60 % |
+| 7 Weekly Test | 20 questions | 70 % -> semaine terminée |
+
+- Après un échec, le quiz propose de **nouvelles** questions (on ne peut pas retenir les réponses).
+- Une composition **corrigée** (par le prof, même avec un score bas, ou par l'IA) valide le jour.
+- Les élèves existants sont convertis automatiquement (une seule fois) : même semaine, même type de jour.
+- Contenu : `backend/src/db/content/` (grammaire, vocabulaire, exercices, phrases, sujets d'écriture
+  des 36 semaines). Il complète la base sans jamais écraser ce que l'admin a modifié.
+  **Faites relire les exercices par un professeur** avant d'ouvrir à beaucoup d'élèves.
+- Variables facultatives : `WEEKLY_TEST_PASS_THRESHOLD` (70), `MIN_READ_SECONDS` (20).
+
+## Notifications (Android, ordinateur, iPhone)
+
+Paramètres > Notifications ouvre une fenêtre qui détecte l'appareil et guide l'utilisateur.
+Pour que ça marche il faut, **côté serveur (Render)**, les 3 variables :
+`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (ex. `mailto:toi@gmail.com`).
+Génération (une seule fois, sur ton PC) : `npx web-push generate-vapid-keys`.
+- **iPhone/iPad (iOS 16.4+)** : Apple n'autorise les notifications que si le site est **ajouté à
+  l'écran d'accueil** (Safari > Partager > Sur l'écran d'accueil), puis ouvert depuis l'icône.
+- Le bouton « Envoyer une notification test » vérifie que tout fonctionne.
+- Les professeurs/admins ont une cloche dans la barre du haut.

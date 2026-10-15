@@ -4,6 +4,7 @@ import { db } from "../db/client.js";
 import { requireAuth } from "../middleware/auth.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
 import { newId } from "../utils/ids.js";
+import { sendPushToUser } from "../services/webpush.service.js";
 
 // GET /api/push/vapid-public-key — PUBLIC (le navigateur en a besoin avant
 // meme d'etre authentifie pour construire l'abonnement push).
@@ -38,4 +39,42 @@ export async function subscribe(req, res) {
   }
 
   sendJson(res, 201, { ok: true });
+}
+
+// GET /api/push/status — cet utilisateur a-t-il au moins un appareil abonne ?
+// (le serveur est-il configure pour envoyer ?)
+export async function status(req, res) {
+  const user = requireAuth(req, res);
+  if (!user) return;
+  const rows = (await db.execute({ sql: "SELECT endpoint FROM push_subscriptions WHERE user_id = ?", args: [user.id] })).rows;
+  sendJson(res, 200, {
+    serverConfigured: Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY),
+    devices: rows.length,
+    endpoints: rows.map((r) => r.endpoint),
+  });
+}
+
+// POST /api/push/unsubscribe { endpoint } — retire l'appareil courant
+export async function unsubscribe(req, res) {
+  const user = requireAuth(req, res);
+  if (!user) return;
+  const body = await readJsonBody(req);
+  if (!body.endpoint) return sendJson(res, 400, { error: "Appareil inconnu." });
+  await db.execute({ sql: "DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?", args: [body.endpoint, user.id] });
+  sendJson(res, 200, { ok: true });
+}
+
+// POST /api/push/test — envoie une notification de test a MES appareils
+export async function sendTest(req, res) {
+  const user = requireAuth(req, res);
+  if (!user) return;
+  const result = await sendPushToUser(user.id, {
+    title: "English Academy",
+    body: "🎉 Les notifications fonctionnent sur cet appareil !",
+    url: "/student/dashboard.html",
+  }, "system");
+  if (!result.configured) return sendJson(res, 503, { error: "Notifications non configurées côté serveur (clés VAPID manquantes)." });
+  if (!result.devices) return sendJson(res, 404, { error: "Aucun appareil abonné : active d'abord les notifications." });
+  if (!result.sent) return sendJson(res, 502, { error: "L'envoi a échoué. Désactive puis réactive les notifications." });
+  sendJson(res, 200, { ok: true, sent: result.sent });
 }

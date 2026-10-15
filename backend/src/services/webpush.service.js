@@ -44,20 +44,23 @@ export async function sendPushToRole(role, payload, sentBy = "system") {
  * Envoie une notification a un utilisateur precis (tous ses appareils).
  */
 export async function sendPushToUser(userId, payload, sentBy = "system") {
-  if (!ensureConfigured()) { console.warn("[webpush] VAPID non configure — push ignore."); return; }
+  if (!ensureConfigured()) { console.warn("[webpush] VAPID non configure — push ignore."); return { configured: false, sent: 0, failed: 0, devices: 0 }; }
   const subs = (await db.execute({ sql: "SELECT * FROM push_subscriptions WHERE user_id = ?", args: [userId] })).rows;
-  await sendToSubscriptionRows(subs, payload, sentBy);
+  return sendToSubscriptionRows(subs, payload, sentBy);
 }
 
 async function sendToSubscriptionRows(subs, payload, sentBy) {
   const body = JSON.stringify(payload);
   const notifiedUserIds = new Set();
+  let sent = 0;
+  let failed = 0;
 
   for (const sub of subs) {
     try {
       const parsed = JSON.parse(sub.subscription_json);
       await webpush.sendNotification(parsed, body);
       notifiedUserIds.add(sub.user_id);
+      sent++;
     } catch (err) {
       // 404/410 = l'abonnement n'existe plus cote navigateur -> on le supprime.
       if (err.statusCode === 404 || err.statusCode === 410) {
@@ -65,6 +68,7 @@ async function sendToSubscriptionRows(subs, payload, sentBy) {
       } else {
         console.error("[webpush] envoi echoue:", err.message);
       }
+      failed++;
     }
   }
 
@@ -74,4 +78,5 @@ async function sendToSubscriptionRows(subs, payload, sentBy) {
       args: [newId("ntf"), userId, payload.title, payload.body, sentBy],
     });
   }
+  return { configured: true, sent, failed, devices: subs.length };
 }

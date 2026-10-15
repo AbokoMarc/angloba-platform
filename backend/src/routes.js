@@ -88,6 +88,9 @@ export const routes = [
   // --- Notifications push (double sens eleve <-> admin/systeme) ---
   ["GET", /^\/api\/push\/vapid-public-key$/, pushCtrl.vapidPublicKey],
   ["POST", /^\/api\/push\/subscribe$/, pushCtrl.subscribe],
+  ["GET", /^\/api\/push\/status$/, pushCtrl.status],
+  ["POST", /^\/api\/push\/unsubscribe$/, pushCtrl.unsubscribe],
+  ["POST", /^\/api\/push\/test$/, pushCtrl.sendTest],
   ["POST", /^\/api\/events$/, eventsCtrl.createEvent],
   ["POST", /^\/api\/admin\/notify$/, engagementCtrl.notifyStudent],
   ["GET", /^\/api\/cron\/check-inactifs$/, engagementCtrl.checkInactive],
@@ -97,8 +100,11 @@ export const routes = [
   ["GET", /^\/api\/daily-quiz$/, dailyQuizCtrl.getDailyQuiz],
   ["POST", /^\/api\/daily-quiz\/submit$/, dailyQuizCtrl.submitDailyQuiz],
 
-  // --- Parcours journalier (Day 1..180) ---
+  // --- Parcours journalier (Day 1..252, semaines de 7 jours) ---
   ["GET", /^\/api\/students\/me\/today$/, daysCtrl.getToday],
-  ["POST", /^\/api\/students\/me\/today\/submit-exercises$/, daysCtrl.submitTodayExercises],
+  ["POST", /^\/api\/students\/me\/today\/task$/, daysCtrl.confirmTask],
+  ["POST", /^\/api\/students\/me\/today\/submit-quiz$/, daysCtrl.submitQuiz],
+  ["POST", /^\/api\/students\/me\/today\/submit-exercises$/, daysCtrl.submitQuiz],
+  ["POST", /^\/api\/students\/me\/today\/submit-writing$/, daysCtrl.submitWriting],
   ["POST", /^\/api\/students\/me\/advance-day$/, daysCtrl.advanceDay],
 ];

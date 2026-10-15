@@ -7,6 +7,7 @@
 //      quelques heures, qui relance tout eleve inactif depuis 24h et casse
 //      le streak de ceux inactifs depuis 48h+.
 
+import { firstDayOfWeek, overallPct } from "../utils/day-mapping.js";
 import { db } from "../db/client.js";
 import { requireRole } from "../middleware/auth.js";
 import { sendJson, readJsonBody } from "../utils/http.js";
@@ -125,10 +126,10 @@ export async function checkInactive(req, res) {
     const monthRow = weekRow ? (await db.execute({ sql: "SELECT number FROM months WHERE id = ?", args: [weekRow.month_id] })).rows[0] : null;
     // Le JOUR est la source de verite du parcours : on le recale aussi, sinon la
     // retrogradation n'avait aucun effet visible (semaine changee, jour inchange).
-    const newDay = (newWeek - 1) * 5 + 1;
+    const newDay = firstDayOfWeek(newWeek);
     await db.execute({
       sql: "UPDATE student_profiles SET current_week = ?, current_month = ?, current_day = ?, overall_pct = ? WHERE user_id = ?",
-      args: [newWeek, monthRow?.number || 1, newDay, Math.round(((newDay - 1) / 180) * 100), student.id],
+      args: [newWeek, monthRow?.number || 1, newDay, overallPct(newDay), student.id],
     });
     sendPushToUser(student.id, {
       title: "English Academy",

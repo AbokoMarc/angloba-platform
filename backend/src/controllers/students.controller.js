@@ -10,6 +10,7 @@ import { requireRole, requirePermission, invalidateUserStatus } from "../middlew
 import { sendJson, readJsonBody } from "../utils/http.js";
 import { recordActivity } from "../utils/activity.js";
 import { sendPushToRole } from "../services/webpush.service.js";
+import { TOTAL_DAYS, dayToWeek, weekToMonth, overallPct } from "../utils/day-mapping.js";
 
 const EXERCISE_PASS_THRESHOLD = Number(process.env.EXERCISE_PASS_THRESHOLD || 60);
 const COMPOSITION_PASS_THRESHOLD = Number(process.env.COMPOSITION_PASS_THRESHOLD || 50);
@@ -71,15 +72,15 @@ export async function updateStudent(req, res, params) {
   if (body.currentMonth !== undefined) { fields.push("current_month = ?"); args.push(body.currentMonth); }
   if (body.currentWeek !== undefined) { fields.push("current_week = ?"); args.push(body.currentWeek); }
 
-  // L'admin peut aussi fixer directement le JOUR (1..180) — recalcule
+  // L'admin peut aussi fixer directement le JOUR (1..252) — recalcule
   // automatiquement semaine/mois en synchro pour le classement et les
   // anciens outils qui raisonnent encore en semaines.
   if (body.currentDay !== undefined) {
-    const clampedDay = Math.max(1, Math.min(180, Number(body.currentDay)));
-    const derivedWeek = Math.min(36, Math.ceil(clampedDay / 5));
-    const derivedMonth = Math.min(9, Math.ceil(derivedWeek / 4));
+    const clampedDay = Math.max(1, Math.min(TOTAL_DAYS, Number(body.currentDay) || 1));
+    const derivedWeek = dayToWeek(clampedDay);
+    const derivedMonth = weekToMonth(derivedWeek);
     fields.push("current_day = ?"); args.push(clampedDay);
-    fields.push("overall_pct = ?"); args.push(Math.round(((clampedDay - 1) / 180) * 100));
+    fields.push("overall_pct = ?"); args.push(overallPct(clampedDay));
     fields.push("current_week = ?"); args.push(derivedWeek);
     fields.push("current_month = ?"); args.push(derivedMonth);
   }

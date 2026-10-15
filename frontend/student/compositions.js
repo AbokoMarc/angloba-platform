@@ -13,22 +13,28 @@ const STARTERS = ["My name is...", "I live in...", "I work as...", "My family ha
       api.get("/compositions/me"),
     ]);
 
-    const submittedIds = new Set(submissions.map((s) => s.composition_id));
-    const next = compositions.find((c) => !submittedIds.has(c.id));
+    // Un simple BROUILLON ne compte pas comme "envoyée" : sinon la composition
+    // disparaissait de l'éditeur dès qu'on enregistrait un brouillon.
+    const sent = submissions.filter((s) => s.status !== "draft");
+    const submittedIds = new Set(sent.map((s) => s.composition_id));
+    // ?id=... : la composition du jour (venant du parcours) passe avant les autres
+    const wantedId = Number(new URLSearchParams(location.search).get("id")) || null;
+    const next = (wantedId && !submittedIds.has(wantedId) && compositions.find((c) => c.id === wantedId)) || compositions.find((c) => !submittedIds.has(c.id));
+    const draft = next ? submissions.find((s) => s.composition_id === next.id && s.status === "draft") : null;
 
     root.innerHTML = `
-      ${next ? renderNextComposition(next) : `<div class="card empty-state">🎉 Toutes les compositions disponibles ont été soumises !</div>`}
+      ${next ? renderNextComposition(next, draft) : `<div class="card empty-state">🎉 Toutes les compositions disponibles ont été soumises !</div>`}
       <h2 class="sec-title">Previous Compositions</h2>
       <div class="stack" id="previous-list"></div>
     `;
 
-    if (next) bindComposeForm(next);
+    if (next) bindComposeForm(next, draft);
 
     const list = document.getElementById("previous-list");
-    if (!submissions.length) {
+    if (!sent.length) {
       list.innerHTML = `<div class="dash-empty"><p style="font-size:34px;">📝</p><b>No previous compositions yet</b>Your finished compositions will appear here for review.</div>`;
     } else {
-      list.innerHTML = submissions.map((s, i) => `
+      list.innerHTML = sent.map((s, i) => `
         <div class="card">
           <button class="row-between toggle-sub" data-i="${i}" style="width:100%;">
             <div style="text-align:left;">
@@ -87,7 +93,7 @@ const STARTERS = ["My name is...", "I live in...", "I work as...", "My family ha
   }
 })();
 
-function renderNextComposition(c) {
+function renderNextComposition(c, draft) {
   return `
     <div class="comp-head">
       <div class="row" style="gap:10px;flex-wrap:wrap;">
@@ -102,7 +108,7 @@ function renderNextComposition(c) {
       <div class="chips scroll" style="margin-bottom:10px;">
         ${STARTERS.map((t) => `<button type="button" class="chip starter" data-text="${esc(t)}">${icon("plus")} ${esc(t)}</button>`).join("")}
       </div>
-      <textarea id="comp-text" class="comp-ta" placeholder="Start writing about yourself here..."></textarea>
+      <textarea id="comp-text" class="comp-ta" placeholder="Start writing about yourself here...">${esc(draft?.body || "")}</textarea>
       <div class="wc" style="margin-top:12px;"><span id="word-count">0/${c.min_words} words</span><div class="progress-bar"><span id="word-bar" style="width:0%;"></span></div><span id="word-pct">0%</span></div>
       <p id="save-note" style="font-size:12.5px;color:#14663F;font-weight:700;min-height:18px;margin-top:6px;"></p>
     </div>
@@ -125,7 +131,7 @@ function renderNextComposition(c) {
   `;
 }
 
-function bindComposeForm(composition) {
+function bindComposeForm(composition, draft) {
   const textarea = document.getElementById("comp-text");
   const wordCount = document.getElementById("word-count");
   const bar = document.getElementById("word-bar");
@@ -140,6 +146,7 @@ function bindComposeForm(composition) {
     pctEl.textContent = `${pct}%`;
   }
   textarea.addEventListener("input", update);
+  update(); // brouillon pré-rempli : affiche le bon nombre de mots
 
   document.querySelectorAll(".starter").forEach((chip) => chip.addEventListener("click", () => {
     const sep = textarea.value && !/\s$/.test(textarea.value) ? " " : "";

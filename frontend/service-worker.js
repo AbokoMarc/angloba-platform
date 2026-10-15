@@ -14,7 +14,7 @@
 
 importScripts("/assets/js/offline-store.js");
 
-const CACHE_NAME = "angloba-shell-v5";
+const CACHE_NAME = "angloba-shell-v6";
 const APP_SHELL = [
   "/index.html",
   "/connexion.html",

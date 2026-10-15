@@ -210,6 +210,7 @@ function renderTopbar({ title, subtitle, roleLabel, roleIcon }) {
     </div>
     <div class="row" style="gap:8px;">
       <span id="offline-indicator" class="badge badge-muted" style="display:none;"></span>
+      ${Auth.getUser()?.role !== "student" ? `<button type="button" aria-label="Notifications" title="Notifications" onclick="typeof openNotificationsSheet === 'function' && openNotificationsSheet()" style="width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--card,#fff);border:1px solid var(--border,#eee);">${svgIcon("bell")}</button>` : ""}
       <span class="role-badge">${svgIcon(roleIcon)}<span class="label">${roleLabel}</span></span>
     </div>
   `;

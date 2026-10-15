@@ -549,3 +549,21 @@ details.wk > summary::-webkit-details-marker { display: none; }
 .stat-grid .ring, .stat-grid .ring svg { width: 60px; height: 60px; }
 .stat-grid .stat .s-ico { width: 40px; height: 40px; }
 .pill { white-space: nowrap; }
+
+/* ---- Parcours : semaine de 7 jours + liste des tâches du jour ---- */
+.week-dots { display: flex; gap: 6px; margin-top: 12px; }
+.week-dots .wd { flex: 1; text-align: center; font-size: 12px; font-weight: 800; padding: 5px 0; border-radius: 10px; background: rgba(255,255,255,.14); color: rgba(255,255,255,.7); }
+.week-dots .wd.done { background: rgba(255,255,255,.32); color: #fff; }
+.week-dots .wd.cur { background: var(--orange, #ff7a00); color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+.task-card { padding-bottom: 12px; }
+.task-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.task { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; background: var(--bg, #FDF5EC); }
+.task .tk { width: 26px; height: 26px; border-radius: 50%; border: 2.5px solid #E2CBA8; flex: none; display: grid; place-items: center; color: #fff; }
+.task .tk svg { width: 15px; height: 15px; }
+.task.done .tk { background: #2e9e5b; border-color: #2e9e5b; }
+.task .tt { display: flex; flex-direction: column; min-width: 0; }
+.task .tt b { font-size: 14.5px; color: var(--brand); }
+.task .tt small { font-size: 12.5px; color: var(--text-muted); font-weight: 600; }
+.task.done .tt b { text-decoration: line-through; opacity: .65; }
+.task-hint { font-size: 13px; font-weight: 700; color: var(--text-muted); margin-top: 10px; }
+button[disabled].btn-cta { opacity: .55; }

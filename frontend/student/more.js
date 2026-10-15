@@ -55,13 +55,13 @@
   `;
 
   const stateEl = document.getElementById("notif-state");
-  const refreshNotif = () => {
-    stateEl.textContent = !("Notification" in window) ? "Not supported" : Notification.permission === "granted" ? "On" : Notification.permission === "denied" ? "Blocked" : "Off";
+  const LABELS = { on: "On", off: "Off", denied: "Blocked", unsupported: "Not supported", "needs-install": "Install first" };
+  const refreshNotif = async () => {
+    try { stateEl.textContent = LABELS[(await Push.status()).state] || ""; } catch { stateEl.textContent = ""; }
   };
   refreshNotif();
-  document.getElementById("notif-btn").addEventListener("click", async () => {
-    if (typeof ensurePushSubscription === "function") await ensurePushSubscription();
-    refreshNotif();
+  document.getElementById("notif-btn").addEventListener("click", () => {
+    openNotificationsSheet((state) => { stateEl.textContent = LABELS[state] || ""; });
   });
   document.getElementById("signout-btn").addEventListener("click", () => {
     Auth.clear();
